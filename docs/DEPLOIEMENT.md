@@ -28,14 +28,14 @@ Le projet est déjà poussé sur `https://github.com/projet-sit/Mybudjet` (branc
    - `DATABASE_URL` → la connection string Neon copiée plus haut
    - `NODE_ENV` → `production`
 6. **Create** → build + déploiement automatique (le `Dockerfile` lance `migrate` puis le serveur : la base est migrée automatiquement au démarrage) ;
-7. Vérifie : `https://<ton-nom-de-service>.onrender.com/api/v1/health` → `{"success":true,...}`
+7. Vérifie : `https://mybudjet-rslh.onrender.com/api/v1/health` → `{"success":true,...}`
 
 ## Étape 4 — Rebuild de l'APK avec la nouvelle URL
 
 Depuis ton poste, modifie `mobile/.env` :
 
 ```
-API_BASE_URL=https://<ton-nom-de-service>.onrender.com/api/v1
+API_BASE_URL=https://mybudjet-rslh.onrender.com/api/v1
 GOOGLE_SERVER_CLIENT_ID=
 ```
 

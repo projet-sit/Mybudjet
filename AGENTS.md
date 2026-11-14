@@ -25,17 +25,10 @@
 - **APK arm64 signée release** : `E:\Mybudjet\app-arm64-v8a-direct-release-obfuscated.apk`
   (copie identique dans `E:\Mybudjet\flutter-apk\`). Installable en sideload
   (sources inconnues à autoriser). Fichiers `debug-symbols\` conservés pour la déobfuscation.
-- **Backend public** : le backend Node tourne en local sur le PC (port 3000) + PostgreSQL
-  dans Docker (`mybudget-db`, port 5434). Pour un accès depuis internet, un tunnel
-  Cloudflare est utilisé (`start-api.bat`). L'**URL du tunnel change à chaque relance** —
-  il faut alors mettre à jour `mobile/.env` (API_BASE_URL) et recompiler l'APK, puis
-  redistribuer. Pour un accès permanent, déployer le backend sur un hébergeur
-  (compte requis) : Render/Fly.io/Cloudflare named tunnel.
-- **Déploiement définitif préparé** : repo git indépendant `E:\Mybudjet\backend` (non poussé),
-  support `DATABASE_URL` + SSL pour Postgres managé, `Dockerfile` (Node 20 Alpine,
-  migrations au démarrage), `render.yaml` pour Render, `docs/DEPLOIEMENT.md` avec la
-  procédure pas-à-pas (GitHub + Neon + Render). `mobile/build-release.ps1` rebuild
-  l'APK arm64 signée en une commande.
+- **Backend public** : le backend Node est hébergé sur Render à l'URL `https://mybudjet-rslh.onrender.com/api/v1`.
+  L'app mobile est buildée avec cette URL (`mobile/.env`). Le service est lié au repo GitHub projet-sit/Mybudjet ;
+  chaque push sur `main` redéploie automatiquement le backend.
+- **Déploiement définitif fait** : repo git `E:\Mybudjet` déjà poussé et le service Render `srv-dbs11cjbc2fs73a9c4d0` est `live`. Les amis installent l'APK mise à jour (`E:\Mybudjet\app-arm64-v8a-direct-release-obfuscated.apk`).
 - `mobile/.env.lan.bak` = `.env` d'origine (adresse LAN `192.168.100.26:3000`, pour un usage sur le réseau domestique).
 - JWT_SECRET backend : rotation aléatoire effectuée (les sessions existantes ont été invalidées).
 

@@ -36,6 +36,11 @@ jobs:
           EOF
           ls -la mobile/android/app/mybudget.jks mobile/android/key.properties
 
+      - name: Prepare mobile/.env
+        shell: bash
+        run: |
+          printf 'API_BASE_URL=https://mybudjet-rslh.onrender.com/api/v1\n' > mobile/.env
+
       - name: Flutter pub get and analyze
         working-directory: mobile
         run: |

@@ -1,0 +1,11 @@
+node_modules/
+.env
+dev.log
+dev_err.log
+prod.log
+tunnel.log
+npm-debug.log
+.git
+.gitignore
+start-api.bat
+test/

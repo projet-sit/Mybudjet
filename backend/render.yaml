@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: mybudget-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # À RENSEIGNER manuellement dans le dashboard (jamais dans le repo) :
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false

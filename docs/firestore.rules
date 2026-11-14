@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fonction helper : utilisateur authentifié
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Fonction helper : propriétaire du document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Collection des utilisateurs
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Profil / métadonnées (solde initial, etc.)
+      match /meta/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Catégories de l'utilisateur
+      match /categories/{categoryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Transactions
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amount is int
+          && request.resource.data.amount > 0
+          && request.resource.data.type in ['income', 'expense']
+          && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
+      }
+
+      // Budgets mensuels
+      match /budgets/{budgetId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.limit is int
+          && request.resource.data.limit > 0
+          && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
+      }
+
+      // Objectifs d'épargne
+      match /goals/{goalId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.targetAmount is int
+          && request.resource.data.targetAmount > 0
+          && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

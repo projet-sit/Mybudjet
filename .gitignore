@@ -45,3 +45,7 @@ Thumbs.db
 # Skills tiers projet
 .agents/
 
+
+backend/.db-url.tmp
+backend/.jwt.tmp
+

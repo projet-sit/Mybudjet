@@ -4,25 +4,11 @@ Objectif : l'API accessible depuis n'importe quel réseau, persistance dans une 
 
 Architecture : **Render** (héberge le backend Node dans Docker, gratuit, met en veille après 15 min d'inactivité) + **Neon** (PostgreSQL gratuit permanent, 1 Go, `sslmode=require`).
 
-## Étape 1 — Compte GitHub (si tu n'en as pas)
+## Étape 1 — Repository
 
-Crée un compte sur https://github.com (inscription gratuite, sans carte) puis un repo **vide** `mybudget-api` (Public ou Private au choix).
+Le projet est déjà poussé sur `https://github.com/projet-sit/Mybudjet` (branche `main`, contient `mobile/` et `backend/`).
 
-## Étape 2 — Pousser le backend
-
-```powershell
-cd E:\Mybudjet\backend
-git init
-git add .
-git commit -m "MYBUDGET API — backend"
-git branch -M main
-git remote add origin https://github.com/TON_COMPTE/mybudget-api.git
-git push -u origin main
-```
-
-Le `.gitignore` (fourni) exclut `node_modules/`, `.env` et les logs — les secrets ne partent pas.
-
-## Étape 3 — Base Neon (PostgreSQL gratuit permanent)
+## Étape 2 — Base Neon (PostgreSQL gratuit permanent)
 
 1. Crée un compte sur https://neon.tech (e-mail suffit) ;
 2. **New Project** → `mybudget` → Postgres par défaut (pas besoin de choisir de version) ;
@@ -31,21 +17,20 @@ Le `.gitignore` (fourni) exclut `node_modules/`, `.env` et les logs — les secr
    (l'option `sslmode=require` est importante — c'est elle qui active le SSL côté app) ;
 4. Garde-la précieusement : c'est `DATABASE_URL` pour Render.
 
-## Étape 4 — Render (service web gratuit)
+## Étape 3 — Render (service web gratuit)
 
-1. Crée un compte sur https://render.com (connexion GitHub une clic) ;
-2. **New +** → **Web Service** → **Connect** ton repo `mybudget-api` ;
-3. Render détecte `Dockerfile` automatiquement : runtime `Docker`, Root Directory `backend` (si le repo est `mybudget-api` à la racine, laisser vide et ajuster `dockerfilePath`) ;
-   - Alternative : **New +** → **Blueprint** recopie `render.yaml` (racine du repo) — mêmes réglages ;
-4. **Plan Free** (gratuit), **Region** : voir ci-dessous (`frankfurt` pour l'Europe ouest / Benin), **Health Check Path** : `/api/v1/health` ;
+1. Crée un compte sur https://render.com (connexion GitHub en un clic) ;
+2. **New +** → **Blueprint** → connecter le repo `projet-sit/Mybudjet` (Render lit automatiquement `render.yaml` à la racine) ;
+3. Render détecte `Dockerfile` dans `./backend` ;
+4. **Plan Free** (gratuit), **Region** : `frankfurt` pour l'Europe ouest / Benin, **Health Check Path** : `/api/v1/health` ;
 5. Variables d'environnement (onglet Environment) :
    - `JWT_SECRET` → tu peux générer une valeur : dans PowerShell `[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')`
    - `DATABASE_URL` → la connection string Neon copiée plus haut
    - `NODE_ENV` → `production`
-6. **Create Web Service** → build + déploiement automatique (le `Dockerfile` lance `migrate` puis le serveur : la base est migrée automatiquement au démarrage).
+6. **Create** → build + déploiement automatique (le `Dockerfile` lance `migrate` puis le serveur : la base est migrée automatiquement au démarrage) ;
 7. Vérifie : `https://<ton-nom-de-service>.onrender.com/api/v1/health` → `{"success":true,...}`
 
-## Étape 5 — Rebuild de l'APK avec la nouvelle URL
+## Étape 4 — Rebuild de l'APK avec la nouvelle URL
 
 Depuis ton poste, modifie `mobile/.env` :
 

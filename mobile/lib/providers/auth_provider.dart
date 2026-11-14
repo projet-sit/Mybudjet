@@ -77,22 +77,6 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     }
   }
 
-  Future<void> signInWithGoogle() async {
-    final previousState = state;
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      return AuthRepository.instance.signInWithGoogle();
-    });
-    if (state.hasError && state.error is GoogleSignInCancelled) {
-      // Annulation volontaire : on restaure l'état précédent sans erreur.
-      state = previousState;
-      return;
-    }
-    if (state.hasValue) {
-      ref.read(offlineProvider.notifier).set(false);
-      ref.invalidate(walletControllerProvider);
-    }
-  }
   Future<void> logout() async {
     await AuthRepository.instance.logout();
     ref.read(offlineProvider.notifier).set(false);
@@ -108,8 +92,6 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   }
   /// Message d'erreur lisible à partir d'une AsyncError.
   static String messageFrom(Object error) {
-    if (error is GoogleSignInFailure) return error.message;
-    if (error is GoogleSignInCancelled) return 'Connexion Google annulée';
     if (error is DioException) {
       final data = error.response?.data;
       if (data is Map<String, dynamic> && data['error'] is Map<String, dynamic>) {

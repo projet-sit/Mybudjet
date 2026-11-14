@@ -1,29 +1,9 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
-import '../config/app_env.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 import 'cache_service.dart';
 import 'token_storage.dart';
-
-/// Annulation volontaire du flux Google (ne pas afficher d'erreur).
-class GoogleSignInCancelled implements Exception {
-  const GoogleSignInCancelled();
-}
-
-/// Échec Google : message déjà rédigé en français, affichable tel quel.
-class GoogleSignInFailure implements Exception {
-  final String message;
-  const GoogleSignInFailure(this.message);
-}
-
-/// Connexion Google demandée alors que GOOGLE_SERVER_CLIENT_ID est vide.
-class GoogleSignInNotConfigured extends GoogleSignInFailure {
-  const GoogleSignInNotConfigured()
-      : super('Connexion Google non configurée — crée le client OAuth dans Google Cloud Console et renseigne GOOGLE_SERVER_CLIENT_ID');
-}
 
 class AuthRepository {
   AuthRepository._internal();
@@ -32,10 +12,6 @@ class AuthRepository {
 
   final Dio _dio = ApiClient.instance.dio;
   final TokenStorage _storage = TokenStorage();
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: const ['email'],
-    serverClientId: AppEnv.googleServerClientId.isEmpty ? null : AppEnv.googleServerClientId,
-  );
   String? get currentAccessToken => ApiClient.instance.accessToken;
 
   Future<AuthSession> register({
@@ -62,47 +38,6 @@ class AuthRepository {
   Future<User> me() async {
     final response = await _dio.get('/auth/me');
     return User.fromJson(response.data['data']['user'] as Map<String, dynamic>);
-  }
-
-  Future<AuthSession> signInWithGoogle() async {
-    if (AppEnv.googleServerClientId.isEmpty) {
-      throw const GoogleSignInNotConfigured();
-    }
-    final GoogleSignInAccount? account;
-    try {
-      account = await _googleSignIn.signIn();
-    } on PlatformException catch (e) {
-      // 10 / 12500 : DEVELOPER_ERROR = SHA-1 ou client OAuth Android manquant.
-      final code = e.code.toLowerCase();
-      final details = '${e.message} ${e.details}'.toLowerCase();
-      if (details.contains('12500') ||
-          details.contains('12501') ||
-          details.contains('developer') ||
-          details.contains(': 10') ||
-          (code.contains('sign_in_failed') && details.trim().endsWith('10'))) {
-        throw const GoogleSignInFailure(
-          'Configuration Google invalide — ajoute le package et le SHA-1 de l’app dans Google Cloud Console',
-        );
-      }
-      if (code.contains('network') || details.contains('network')) {
-        throw const GoogleSignInFailure('Réseau indisponible — vérifie ta connexion et réessaie');
-      }
-      throw GoogleSignInFailure('Connexion Google impossible — réessaie ($code)');
-    } catch (_) {
-      throw const GoogleSignInFailure('Connexion Google impossible — réessaie dans un instant');
-    }
-    if (account == null) {
-      throw const GoogleSignInCancelled();
-    }
-    final auth = await account.authentication;
-    final idToken = auth.idToken;
-    if (idToken == null) {
-      throw const GoogleSignInFailure(
-        'Token Google manquant — vérifie que GOOGLE_SERVER_CLIENT_ID (client OAuth Web) est défini dans .env',
-      );
-    }
-    final response = await _dio.post('/auth/google', data: {'idToken': idToken});
-    return _saveSession(response.data['data'] as Map<String, dynamic>);
   }
 
   Future<void> logout() async {    final session = await _storage.loadSession();

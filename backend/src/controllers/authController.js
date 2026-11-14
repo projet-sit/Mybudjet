@@ -73,16 +73,6 @@ async function resetPassword(req, res, next) {
   }
 }
 
-async function google(req, res, next) {
-  try {
-    const { idToken } = parseBody(req.body, ['idToken']);
-    const { user, tokens } = await authService.googleLogin({ idToken });
-    return success(res, { user, tokens }, 200);
-  } catch (err) {
-    return next(err);
-  }
-}
-
 async function me(req, res, next) {  try {
     const user = await authService.getProfile(req.uid);
     return success(res, { user });
@@ -110,4 +100,4 @@ async function deleteMe(req, res, next) {
   }
 }
 
-module.exports = { register, login, google, refresh, logout, forgotPassword, resetPassword, me, updateMe, deleteMe };
+module.exports = { register, login, refresh, logout, forgotPassword, resetPassword, me, updateMe, deleteMe };

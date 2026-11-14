@@ -10,25 +10,7 @@ class AppDateUtils {
     return '${utc.year}-$month';
   }
 
-  /// Nom lisible du mois (ex: 'Novembre 2026')
-  static String formatMonthHeader(DateTime date) {
-    return DateFormat('MMMM yyyy', 'fr_FR').format(date);
-  }
-
-  /// Nom court du mois pour les graphiques (ex: 'Nov')
-  static String formatMonthShort(DateTime date) {
-    final raw = DateFormat('MMM', 'fr_FR').format(date);
-    final clean = raw.replaceAll('.', '');
-    if (clean.isEmpty) return '';
-    return '${clean[0].toUpperCase()}${clean.substring(1)}';
-  }
-
-  /// Format de date lisible pour les listes de transactions (ex: '12 nov. 2026')
-  static String formatShortDate(DateTime date) {
-    return DateFormat('d MMM yyyy', 'fr_FR').format(date);
-  }
-
-  /// Clé de groupement par jour 'YYYY-MM-DD'
+  /// Retourne la clé de jour standard 'YYYY-MM-DD' (UTC)
   static String toDayKey(DateTime date) {
     final utc = date.toUtc();
     final month = utc.month.toString().padLeft(2, '0');
@@ -36,16 +18,27 @@ class AppDateUtils {
     return '${utc.year}-$month-$day';
   }
 
-  /// En-tête de groupement journalier (ex: 'Aujourd\'hui', 'Hier', ou 'Jeudi 12 novembre')
+  /// En-tête de mois "11/2026"
+  static String formatMonthHeader(DateTime date) {
+    return DateFormat('MM/yyyy').format(date);
+  }
+
+  /// Nom court du mois pour les graphiques (ex: '01/11')
+  static String formatMonthShort(DateTime date) => DateFormat('M/yy').format(date);
+
+  /// Format de date lisible pour les listes de transactions (ex: '12/11/2026')
+  static String formatShortDate(DateTime date) => DateFormat('dd/MM/yyyy').format(date);
+
+  /// En-tête de groupement journalier (ex: 'Aujourd'hui', 'Hier', ou '12/11/2026')
   static String formatDayHeader(DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final target = DateTime(date.year, date.month, date.day);
     final diff = today.difference(target).inDays;
 
-    if (diff == 0) return 'Aujourd\'hui';
+    if (diff == 0) return "Aujourd'hui";
     if (diff == 1) return 'Hier';
-    return DateFormat('EEEE d MMMM', 'fr_FR').format(date);
+    return DateFormat('dd/MM/yyyy').format(date);
   }
 
   /// Retourne la liste des [count] derniers mois dans l'ordre chronologique

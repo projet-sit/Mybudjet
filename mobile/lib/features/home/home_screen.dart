@@ -113,7 +113,8 @@ class HomeScreen extends ConsumerWidget {
 
           if (wallet != null) ...[
             const SizedBox(height: 14),
-            if (dashboardState.value != null) _BudgetCard(dashboard: dashboardState.value!),
+            if (dashboardState.value != null)
+              _BudgetCard(dashboard: dashboardState.value!, wallet: wallet),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -388,17 +389,20 @@ class _Pill extends StatelessWidget {
 }
 
 class _BudgetCard extends StatelessWidget {
-  const _BudgetCard({required this.dashboard});
+  const _BudgetCard({required this.dashboard, this.wallet});
 
   final DashboardData dashboard;
+  final Wallet? wallet;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final percent = dashboard.percentUsed.clamp(0, 100);
-    final base = dashboard.initialAmount + dashboard.totalIncomes;
-    final remaining = (base - dashboard.totalExpenses).clamp(0, base < 0 ? 0 : base);
-    final progress = base > 0 ? (dashboard.totalExpenses / base).clamp(0.0, 1.0) : 0.0;
+    final savings = wallet?.savingsAmount ?? 0;
+    final base = dashboard.initialAmount + dashboard.totalIncomes - savings;
+    final computedBase = base < 0 ? 0 : base;
+    final percent = computedBase > 0 ? ((dashboard.totalExpenses / computedBase) * 100).round().clamp(0, 100) : 0;
+    final remaining = (computedBase - dashboard.totalExpenses).clamp(0, computedBase);
+    final progress = computedBase > 0 ? (dashboard.totalExpenses / computedBase).clamp(0.0, 1.0) : 0.0;
     final color = percent >= 80 ? scheme.error : scheme.primary;
 
     return Container(
@@ -445,7 +449,7 @@ class _BudgetCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${formatXof(dashboard.totalExpenses, withCurrency: false)} dépensés sur ${formatXof(base, withCurrency: false)} FCFA',
+                  '${formatXof(dashboard.totalExpenses, withCurrency: false)} dépensés sur ${formatXof(computedBase, withCurrency: false)} FCFA',
                   style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),

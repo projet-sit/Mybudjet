@@ -65,4 +65,21 @@ async function setSavings(req, res, next) {
   }
 }
 
-module.exports = { create, list, get, updateInitialAmount, getHistory, setSavings };
+async function reset(req, res, next) {
+  try {
+    const wallet = await walletService.resetWallet(req.uid, req.params.id);
+    return success(res, { wallet });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = {
+  create,
+  list,
+  get,
+  updateInitialAmount,
+  getHistory,
+  setSavings,
+  reset,
+};

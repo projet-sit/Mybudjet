@@ -162,34 +162,6 @@ async function resetPassword({ token, newPassword }) {
   return true;
 }
 
-async function googleLogin({ idToken }) {
-  if (!idToken) {
-    throw ApiError.validation('Token Google manquant', { field: 'idToken' });
-  }
-  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-  if (!res.ok) {
-    throw ApiError.unauthorized('Token Google invalide');
-  }
-  const info = await res.json();
-  // Vérification d'audience : le token doit être destiné à cette application
-  // (GOOGLE_CLIENT_ID = client OAuth Web de Google Cloud Console).
-  if (process.env.GOOGLE_CLIENT_ID && String(info.aud || '') !== process.env.GOOGLE_CLIENT_ID.trim()) {
-    throw ApiError.unauthorized('Token Google non destiné à cette application');
-  }
-  const email = String(info.email || '').trim().toLowerCase();
-  const name = clean(info.name || info.given_name || (email ? email.split('@')[0] : ''));
-  if (!email) {
-    throw ApiError.validation('E-mail Google manquant');
-  }
-  let user = await userRepository.findByEmail(email);
-  if (!user) {
-    const passwordHash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), BCRYPT_ROUNDS);
-    user = await userRepository.create({ displayName: name.length >= 2 ? name : 'Utilisateur', email, passwordHash });
-  }
-  const tokens = await issueTokens(user.id);
-  return { user: userRepository.toPublicUser(user), tokens };
-}
-
 async function getProfile(uid) {  const user = await userRepository.findById(uid);
   if (!user) throw ApiError.notFound('Utilisateur introuvable');
   return userRepository.toPublicUser(user);
@@ -234,7 +206,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   getProfile,
-  googleLogin,
-  updateProfile,  deleteAccount,
+  updateProfile,
+  deleteAccount,
   verifyAccessToken,
 };

@@ -101,6 +101,11 @@ async function setSavings(uid, walletId, body) {
   return walletRepository.setSavings(wallet.id, amount);
 }
 
+async function resetWallet(uid, walletId) {
+  const wallet = await getWallet(uid, walletId); // vérifie propriété
+  return walletRepository.reset(wallet.id);
+}
+
 module.exports = {
   createWallet,
   listWallets,
@@ -108,4 +113,5 @@ module.exports = {
   updateInitialAmount,
   getHistory,
   setSavings,
+  resetWallet,
 };

@@ -13,5 +13,6 @@ router.get('/:id', walletController.get);
 router.get('/:id/initial-amount/history', walletController.getHistory);
 router.patch('/:id/initial-amount', walletController.updateInitialAmount);
 router.patch('/:id/savings', walletController.setSavings);
+router.post('/:id/reset', walletController.reset);
 
 module.exports = router;

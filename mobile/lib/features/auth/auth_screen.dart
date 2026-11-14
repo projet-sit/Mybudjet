@@ -387,12 +387,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        onPressed: loading ? null : () => ref.read(authControllerProvider.notifier).signInWithGoogle(),
-                        icon: const Icon(Icons.g_mobiledata),
-                        label: const Text('Continuer avec Google'),
-                      ),
-                      const SizedBox(height: 14),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [

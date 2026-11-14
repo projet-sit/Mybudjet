@@ -59,4 +59,11 @@ class WalletRepository {
     });
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
   }
+
+  /// Repart à zéro : efface transactions, budgets, objectifs, périodes et
+  /// historique, remet le portefeuille à 0 et recrée une période active.
+  Future<Wallet> reset(String walletId) async {
+    final response = await _dio.post('/wallets/$walletId/reset');
+    return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
+  }
 }

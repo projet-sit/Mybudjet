@@ -1,0 +1,67 @@
+name: Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  flutter_version: '3.44.0'
+
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.flutter_version }}
+
+      - name: Prepare Android signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          mkdir -p mobile/android/app
+          echo "$SIGNING_KEY" | base64 -d > mobile/android/app/mybudget.jks
+          cat > mobile/android/key.properties <<EOF
+          storeFile=mybudget.jks
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=mybudget
+          EOF
+          ls -la mobile/android/app/mybudget.jks mobile/android/key.properties
+
+      - name: Flutter pub get and analyze
+        working-directory: mobile
+        run: |
+          flutter pub get
+          flutter analyze --no-pub
+
+      - name: Build release APK arm64
+        working-directory: mobile
+        run: flutter build apk --release --flavor direct --split-per-abi --obfuscate --split-debug-info=build/debug-info
+
+      - name: Rename APK
+        shell: bash
+        run: cp mobile/build/app/outputs/flutter-apk/app-arm64-v8a-direct-release.apk mobile/build/app/outputs/flutter-apk/app-arm64-v8a-direct-release-obfuscated.apk
+
+      - name: Rolling release (latest) with updated APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: mobile/build/app/outputs/flutter-apk
+        run: |
+          gh release view latest --repo projet-sit/Mybudjet >/dev/null 2>&1 || \
+            gh release create latest --repo projet-sit/Mybudjet --title "Latest MYBUDGET APK" --notes "Rolling latest MYBUDGET APK build — updated automatically on every push to main."
+          gh release delete-asset latest app-arm64-v8a-direct-release-obfuscated.apk --yes || true
+          gh release upload latest app-arm64-v8a-direct-release-obfuscated.apk
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-arm64-v8a-direct-release
+          path: mobile/build/app/outputs/flutter-apk/app-arm64-v8a-direct-release-obfuscated.apk

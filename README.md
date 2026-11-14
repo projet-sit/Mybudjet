@@ -88,3 +88,7 @@ backend/src
   controllers / services / repositories / validators / routes / middlewares
   database/migrations (001_core, 002_wallets, 003_transactions_budgets)
 ```
+=======
+# Mybudjet
+Application de suivie financier 
+>>>>>>> origin/main

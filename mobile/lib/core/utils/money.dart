@@ -8,11 +8,21 @@ String formatXof(int amount, {bool withCurrency = true}) {
   return withCurrency ? '$grouped FCFA' : grouped;
 }
 
-/// Date ISO (YYYY-MM-DD) → "01/04/2025"
+/// Date ISO → "17/11/2026" (tolère un suffixe d'heure)
 String formatDateFr(String isoDate) {
-  if (isoDate.length < 10) return isoDate;
-  final parts = isoDate.split('-');
-  return '${parts[2]}/${parts[1]}/${parts[0]}';
+  final raw = (isoDate).trim();
+  if (raw.isEmpty) return raw;
+  final parsed = DateTime.tryParse(raw);
+  if (parsed != null) {
+    final d = parsed.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+  final parts = raw.split('-');
+  if (parts.length >= 3) {
+    final day = parts[2].split(RegExp(r'[T ]')).first.padLeft(2, '0');
+    return '$day/${parts[1].padLeft(2, '0')}/${parts[0]}';
+  }
+  return raw;
 }
 
 /// Date + heure temps réel (heure du Bénin) : "14/11/2026 · 14:05"

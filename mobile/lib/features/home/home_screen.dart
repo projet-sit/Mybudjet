@@ -219,6 +219,7 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initial = wallet.name.trim().isEmpty ? 'M' : wallet.name.trim()[0].toUpperCase();
+    final available = (wallet.balance - wallet.savingsAmount).clamp(0, wallet.balance);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
@@ -294,7 +295,7 @@ class _HeroCard extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              formatXof(wallet.balance),
+              formatXof(available),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 30,

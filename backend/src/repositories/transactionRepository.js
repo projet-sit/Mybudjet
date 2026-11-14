@@ -1,5 +1,6 @@
 const { query, withTransaction } = require('../config/db');
 const ApiError = require('../utils/ApiError');
+const { toDateOnly } = require('../utils/dates');
 const periodRepository = require('./periodRepository');
 
 function toTransaction(row) {
@@ -11,7 +12,7 @@ function toTransaction(row) {
     amount: Number(row.amount),
     category: row.category,
     description: row.description,
-    date: row.date,
+    date: toDateOnly(row.date),
     time: row.time,
     paymentMethod: row.payment_method,
     createdAt: row.created_at,

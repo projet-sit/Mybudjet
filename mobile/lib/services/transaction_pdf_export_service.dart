@@ -56,17 +56,11 @@ class TransactionPdfExportService {
     required List<Transaction> transactions,
     String? displayName,
   }) async {
-    // Palette de marque (valeurs 0..1 pour éviter toute ambiguïté de conversion).
-    const deepGreen = PdfColor(0.043, 0.365, 0.231); // #0B5D3B
-    const deepGreenDark = PdfColor(0.027, 0.239, 0.149); // #074026
-    const mintSoft = PdfColor(0.918, 0.965, 0.937); // #EAF6EF — fond doux
-    const rowAlt = PdfColor(0.965, 0.980, 0.969); // #F6FAF7 — lignes alternées
-    const ink = PdfColor(0.122, 0.141, 0.188); // #1F2430 — texte
-    const muted = PdfColor(0.40, 0.43, 0.46); // #676E75 — gris texte
-    const border = PdfColor(0.816, 0.843, 0.824); // #D0D7D2 — bordures
-    const incomeGreen = PdfColor(0.122, 0.616, 0.388); // #1F9D63 — revenus
-    const expenseRed = PdfColor(0.753, 0.224, 0.169); // #C0392B — dépenses
-    const offWhite = PdfColor(0.984, 0.984, 0.973); // #FBFBF8 — fond de page
+    // Palette noir & blanc (impression contrastée, valeurs 0..1).
+    const black = PdfColor(0, 0, 0); // texte principal, bandeau, en-tête de tableau
+    const darkGrey = PdfColor(0.35, 0.35, 0.35); // texte secondaire
+    const lightGrey = PdfColor(0.93, 0.93, 0.93); // lignes alternées / fonds doux
+    const border = PdfColor(0.72, 0.72, 0.72); // bordures grises
 
     final document = pw.Document();
     final expenses = transactions
@@ -86,7 +80,7 @@ class TransactionPdfExportService {
           padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Text(
             'MYBUDGET  |  Historique des opérations',
-            style: const pw.TextStyle(color: PdfColor(0.40, 0.43, 0.46), fontSize: 8),
+            style: const pw.TextStyle(color: PdfColor(0.4, 0.4, 0.4), fontSize: 8),
           ),
         ),
         footer: (context) => pw.Container(
@@ -94,16 +88,16 @@ class TransactionPdfExportService {
           padding: const pw.EdgeInsets.only(top: 8),
           child: pw.Text(
             'Page ${context.pageNumber} / ${context.pagesCount}',
-            style: const pw.TextStyle(color: PdfColor(0.40, 0.43, 0.46), fontSize: 8),
+            style: const pw.TextStyle(color: PdfColor(0.4, 0.4, 0.4), fontSize: 8),
           ),
         ),
         build: (context) => [
-          // Bandeau de marque : vert profond, titre en blanc.
+          // Bandeau noir, titre blanc — noir et blanc strict.
           pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.fromLTRB(24, 18, 24, 18),
             decoration: pw.BoxDecoration(
-              color: deepGreen,
+              color: black,
               borderRadius: const pw.BorderRadius.all(pw.Radius.circular(12)),
             ),
             child: pw.Row(
@@ -143,7 +137,7 @@ class TransactionPdfExportService {
                       pw.Text(
                         'Portefeuille : $walletName',
                         style: const pw.TextStyle(
-                          color: PdfColor(0.91, 0.96, 0.92),
+                          color: PdfColor(0.82, 0.82, 0.82),
                           fontSize: 11,
                         ),
                       ),
@@ -151,14 +145,14 @@ class TransactionPdfExportService {
                         pw.Text(
                           'Compte : ${displayName.trim()}',
                           style: const pw.TextStyle(
-                            color: PdfColor(0.91, 0.96, 0.92),
+                            color: PdfColor(0.82, 0.82, 0.82),
                             fontSize: 9,
                           ),
                         ),
                       pw.Text(
                         'Généré le $generatedAt',
                         style: const pw.TextStyle(
-                          color: PdfColor(0.75, 0.86, 0.78),
+                          color: PdfColor(0.7, 0.7, 0.7),
                           fontSize: 9,
                         ),
                       ),
@@ -169,24 +163,24 @@ class TransactionPdfExportService {
             ),
           ),
           pw.SizedBox(height: 12),
-          // Cartes de synthèse sur fond mint.
+          // Cartes de synthèse sur fond gris très clair.
           pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.all(12),
             decoration: pw.BoxDecoration(
-              color: mintSoft,
+              color: lightGrey,
               borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
               border: pw.Border.all(color: border, width: 0.6),
             ),
             child: pw.Row(
               children: [
-                _summaryCard('Transactions', '${transactions.length}', deepGreen, ink, offWhite),
+                _summaryCard('Transactions', '${transactions.length}'),
                 pw.SizedBox(width: 10),
-                _summaryCard('Revenus', formatXof(incomes), incomeGreen, ink, offWhite),
+                _summaryCard('Revenus', formatXof(incomes)),
                 pw.SizedBox(width: 10),
-                _summaryCard('Dépenses', formatXof(expenses), expenseRed, ink, offWhite),
+                _summaryCard('Dépenses', formatXof(expenses)),
                 pw.SizedBox(width: 10),
-                _summaryCard('Solde initial', formatXof(initialAmount), deepGreenDark, ink, offWhite),
+                _summaryCard('Solde initial', formatXof(initialAmount)),
               ],
             ),
           ),
@@ -197,7 +191,7 @@ class TransactionPdfExportService {
               child: pw.Center(
                 child: pw.Text(
                   'Aucune transaction enregistrée.',
-                  style: const pw.TextStyle(color: muted, fontSize: 12),
+                  style: const pw.TextStyle(color: darkGrey, fontSize: 12),
                 ),
               ),
             )
@@ -228,10 +222,10 @@ class TransactionPdfExportService {
                 fontSize: 8,
                 fontWeight: pw.FontWeight.bold,
               ),
-              cellStyle: const pw.TextStyle(fontSize: 8, color: ink),
+              cellStyle: const pw.TextStyle(fontSize: 8, color: black),
               cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 6),
-              headerDecoration: const pw.BoxDecoration(color: deepGreen),
-              oddRowDecoration: const pw.BoxDecoration(color: rowAlt),
+              headerDecoration: const pw.BoxDecoration(color: black),
+              oddRowDecoration: const pw.BoxDecoration(color: lightGrey),
               border: pw.TableBorder.all(color: border, width: 0.4),
               columnWidths: const {
                 0: pw.FixedColumnWidth(62),
@@ -250,12 +244,12 @@ class TransactionPdfExportService {
     return document.save();
   }
 
-  static pw.Widget _summaryCard(String label, String value, PdfColor accent, PdfColor ink, PdfColor cardBg) => pw.Expanded(
+  static pw.Widget _summaryCard(String label, String value) => pw.Expanded(
         child: pw.Container(
           padding: const pw.EdgeInsets.all(10),
           decoration: pw.BoxDecoration(
-            color: cardBg,
-            border: pw.Border.all(color: accent, width: 1.2),
+            color: const PdfColor(1, 1, 1),
+            border: pw.Border.all(color: const PdfColor(0, 0, 0), width: 1.2),
             borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
           ),
           child: pw.Column(
@@ -263,12 +257,20 @@ class TransactionPdfExportService {
             children: [
               pw.Text(
                 label.toUpperCase(),
-                style: pw.TextStyle(color: accent, fontSize: 7, fontWeight: pw.FontWeight.bold),
+                style: const pw.TextStyle(
+                  color: PdfColor(0.35, 0.35, 0.35),
+                  fontSize: 7,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
               pw.SizedBox(height: 4),
               pw.Text(
                 value,
-                style: pw.TextStyle(color: ink, fontSize: 11, fontWeight: pw.FontWeight.bold),
+                style: const pw.TextStyle(
+                  color: PdfColor(0, 0, 0),
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ],
           ),

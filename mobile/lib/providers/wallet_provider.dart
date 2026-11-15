@@ -2,12 +2,10 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
-import '../models/transaction.dart';
+import '../core/utils/money.dart';
 import '../models/wallet.dart';
 import '../services/cache_service.dart';
-import '../services/outbox.dart';
 import '../services/wallet_repository.dart';
 
 /// Portefeuille courant de l'utilisateur (null si aucun).
@@ -81,88 +79,17 @@ class WalletController extends AsyncNotifier<Wallet?> {
     });
   }
 
-  /// Verse un montant à l'épargne (argent sorti du Reste, atomique).
-  /// Hors-ligne : mise en attente + application optimiste immédiate.
-  Future<void> savingsDeposit(int amount) => _savingsMove(amount, isDeposit: true);
-
-  /// Retire un montant de l'épargne (retour dans le Reste, atomique).
-  Future<void> savingsWithdraw(int amount) => _savingsMove(amount, isDeposit: false);
-
-  /// « Tout récupérer » : toute l'épargne retourne dans le Reste, atomique.
-  Future<WriteResult> savingsWithdrawAll() async {
-    final current = state.value;
-    if (current == null) return const WriteResult.sent();
-    try {
-      final updated = await WalletRepository.instance.savingsWithdrawAll(current.id);
-      await CacheService.instance.saveWallet(updated);
-      state = AsyncData(updated);
-      return const WriteResult.sent();
-    } on DioException catch (e) {
-      if (_isNetworkish(e)) {
-        final tx = Transaction(
-          id: 'local_${DateTime.now().millisecondsSinceEpoch}',
-          walletId: current.id,
-          type: 'savings_withdrawal',
-          amount: current.savingsAmount > 0 ? current.savingsAmount : 0,
-          category: 'Épargne',
-          description: null,
-          date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
-          time: DateFormat('HH:mm').format(DateTime.now()),
-        );
-        if (current.savingsAmount > 0) {
-          // L'overlay applique la totalité : l'épargne passe à 0 côté cache.
-          await Outbox.instance.applyPendingTransactionLocally(current.id, tx);
-        }
-        await Outbox.instance.enqueueSavings(
-          current.id,
-          kind: OutboxKind.savingsWithdrawAll,
-          txId: tx.id,
-        );
-        final updated = await CacheService.instance.loadWallet();
-        if (updated != null) state = AsyncData(updated);
-        return const WriteResult.queued();
-      }
-      rethrow;
-    }
-  }
-
-  Future<void> _savingsMove(int amount, {required bool isDeposit}) async {
+  /// Fixe le montant mis de côté (réserve dans le même compte).
+  /// Le montant est validé côté UI (0 ≤ newAmount ≤ solde).
+  Future<void> setSavings(int newAmount) async {
     final current = state.value;
     if (current == null) return;
-    try {
-      final updated = isDeposit
-          ? await WalletRepository.instance.savingsDeposit(current.id, amount)
-          : await WalletRepository.instance.savingsWithdraw(current.id, amount);
-      await CacheService.instance.saveWallet(updated);
-      state = AsyncData(updated);
-    } on DioException catch (e) {
-      if (!_isNetworkish(e)) rethrow; // refus métier : on laisse l'écran afficher
-      final tx = Transaction(
-        id: 'local_${DateTime.now().millisecondsSinceEpoch}',
-        walletId: current.id,
-        type: isDeposit ? 'savings_deposit' : 'savings_withdrawal',
-        amount: amount,
-        category: 'Épargne',
-        description: null,
-        date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
-        time: DateFormat('HH:mm').format(DateTime.now()),
-      );
-      await Outbox.instance.applyPendingTransactionLocally(current.id, tx);
-      await Outbox.instance.enqueueSavings(
-        current.id,
-        kind: isDeposit ? OutboxKind.savingsDeposit : OutboxKind.savingsWithdraw,
-        amount: amount,
-        txId: tx.id,
-      );
-      final updated = await CacheService.instance.loadWallet();
-      if (updated != null) state = AsyncData(updated);
+    if (newAmount < 0 || newAmount > current.balance) {
+      throw StateError('Montant invalide — entre 0 et ${formatXof(current.balance)}');
     }
-  }
-
-  bool _isNetworkish(DioException e) {
-    final status = e.response?.statusCode;
-    if (status == null) return true;
-    return status >= 500;
+    final updated = await WalletRepository.instance.setSavings(current.id, newAmount);
+    await CacheService.instance.saveWallet(updated);
+    state = AsyncData(updated);
   }
 
   Future<void> updateInitialAmount(int newAmount) async {

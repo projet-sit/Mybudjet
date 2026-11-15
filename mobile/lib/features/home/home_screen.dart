@@ -11,7 +11,9 @@ import '../../providers/shell_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/cache_service.dart';
+import '../../services/transaction_pdf_export_service.dart';
 import '../../widgets/transaction_tile.dart';
 import '../reset/reset_flow.dart';
 import '../transactions/transaction_detail_sheet.dart';
@@ -42,7 +44,13 @@ class HomeScreen extends ConsumerWidget {
     if (wallet == null) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final path = await CacheService.instance.exportCsv(wallet.id);
+      // Export PDF (comme avant), généré à partir du backend réel.
+      final path = await TransactionPdfExportService.export(
+        walletId: wallet.id,
+        walletName: wallet.name,
+        initialAmount: wallet.initialAmount,
+        displayName: ref.read(authControllerProvider).value?.user.displayName,
+      );
       await CacheService.instance.shareFile(path);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(TransactionsController.messageFrom(e))));

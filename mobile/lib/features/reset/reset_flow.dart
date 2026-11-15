@@ -10,6 +10,7 @@ import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
 import '../../services/outbox.dart';
 import '../../services/period_repository.dart';
+import '../../services/wallet_repository.dart';
 import '../../providers/sync_provider.dart';
 
 /// Double confirmation de remise à zéro — utilisée depuis Profil et depuis
@@ -27,9 +28,11 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
     return;
   }
 
-  // Garde-fou : si le backend ne connaît pas l'historique des périodes, son
-  // /reset DÉTRUIT TOUT (pas d'archivage) — on bloque plutôt que d'archiver.
+  // Détecte la version du serveur : l'ancienne ne connaît pas /periods et son
+  // /reset DÉTRUIT TOUT (pas d'archivage ni annulation). On propose alors un
+  // effacement définitif explicite.
   final messenger = ScaffoldMessenger.of(context);
+  var legacyServer = false;
   try {
     await ApiClient.instance.dio.head(
       '/wallets/${wallet.id}/periods',
@@ -39,13 +42,17 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
       ),
     );
   } on DioException catch (e) {
-    if (e.response?.statusCode == 404) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('Réinitialisation indisponible : le serveur doit être mis à jour. Réessaie dans quelques minutes.'),
-      ));
-      return;
-    }
-    // Autre erreur réseau : on continue (le flux gère déjà la mise en attente hors-ligne).
+    if (e.response?.statusCode == 404) legacyServer = true;
+    // Autre erreur réseau : l'application continuera hors-ligne (en file d'attente).
+  } on TimeoutException {
+    messenger.showSnackBar(const SnackBar(content: Text('Serveur lent — réessaie dans un instant.')));
+    return;
+  }
+
+  if (legacyServer) {
+    if (!context.mounted) return;
+    await _legacyServerReset(context, ref, wallet.id);
+    return;
   }
 
   // ---------- Confirmation 1 : ce qui sera remis à zéro ----------
@@ -248,5 +255,86 @@ class _Bullet extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+/// Mode « serveur obsolète » : effacement total et DÉFINITIF, sans archivage.
+/// Affiché en clair pour la sécurité des données : l'utilisateur sait ce qu'il perd.
+Future<void> _legacyServerReset(BuildContext context, WidgetRef ref, String walletId) async {
+  final messenger = ScaffoldMessenger.of(context);
+
+  final step1 = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Tout effacer définitivement ?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text('Cette version du serveur est ancienne. La remise à zéro efface DÉFINITIVEMENT :'),
+          SizedBox(height: 8),
+          _Bullet('toutes tes opérations (historique inclus)'),
+          _Bullet('tous tes budgets et tes objectifs'),
+          _Bullet('ton épargne'),
+          _Bullet('le montant initial et son historique'),
+          SizedBox(height: 8),
+          Text(
+            'Aucune restauration possible.',
+            style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(dialogContext).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Tout effacer'),
+        ),
+      ],
+    ),
+  );
+  if (step1 != true || !context.mounted) return;
+
+  final step2 = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Dernière confirmation'),
+      content: const Text(
+        'Cela effacera DÉFINITIVEMENT ton budget, tes opérations et ton épargne. Aucune annulation possible.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(dialogContext).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Tout effacer définitivement'),
+        ),
+      ],
+    ),
+  );
+  if (step2 != true || !context.mounted) return;
+
+  try {
+    final wallet = await WalletRepository.instance.hardReset(walletId);
+    if (wallet == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('La remise à zéro a échoué. Réessaie.')));
+      return;
+    }
+    ref.read(walletControllerProvider.notifier).setWallet(wallet);
+    _invalidateAll(ref);
+    await ref.read(syncInfoProvider.notifier).refresh();
+    messenger.showSnackBar(const SnackBar(content: Text('Portefeuille effacé définitivement')));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(WalletController.messageFrom(e))));
   }
 }

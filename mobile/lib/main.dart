@@ -65,7 +65,15 @@ class _MyAppState extends ConsumerState<MyApp> {
       ApiClient.instance.wake();
       await ref.read(authControllerProvider.notifier).revalidate();
       // 3. Rejoue les écritures en attente, puis rafraîchit tout.
-      await Outbox.instance.flush();
+      final flushResult = await Outbox.instance.flush();
+      if (flushResult.hasFailures) {
+        ref.read(syncNoticeProvider.notifier).setFailed(
+              flushResult.failures.length,
+              flushResult.failures.first.message,
+            );
+      } else if (flushResult.replayed > 0) {
+        ref.read(syncNoticeProvider.notifier).clear();
+      }
       await ref.read(walletControllerProvider.notifier).refresh();
       ref.invalidate(dashboardControllerProvider);
       ref.invalidate(transactionsProvider);

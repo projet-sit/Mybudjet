@@ -315,7 +315,14 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(budgetsControllerProvider.notifier).remove(b.id);
+      try {
+        await ref.read(budgetsControllerProvider.notifier).remove(b.id);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(TransactionsController.messageFrom(e))),
+        );
+      }
     }
   }
 
@@ -379,9 +386,16 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       },
     );
     if (result != null) {
-      await ref
-          .read(budgetsControllerProvider.notifier)
-          .create(category: result.category, limitAmount: result.amount);
+      try {
+        await ref
+            .read(budgetsControllerProvider.notifier)
+            .create(category: result.category, limitAmount: result.amount);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(TransactionsController.messageFrom(e))),
+        );
+      }
     }
   }
 
@@ -406,7 +420,14 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
     if (confirmed == true) {
       final amount = int.tryParse(controller.text.replaceAll(' ', ''));
       if (amount != null && amount > 0) {
-        await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, amount);
+        try {
+          await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, amount);
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(TransactionsController.messageFrom(e))),
+          );
+        }
       }
     }
   }

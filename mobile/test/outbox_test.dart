@@ -139,12 +139,50 @@ void main() {
       expect(await Outbox.instance.count(), 1);
 
       backendUp = true;
-      final replayed = await Outbox.instance.flush();
+      final result = await Outbox.instance.flush();
 
-      expect(replayed, 1);
+      expect(result.replayed, 1);
+      expect(result.hasFailures, isFalse);
       expect(await Outbox.instance.count(), 0);
       expect(received, hasLength(1));
       expect(received.first['amount'], 5000);
+    });
+
+    test('échec définitif au rejeu : rollback local + échec remonté', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cache_wallet', jsonEncode(_wallet().toJson()));
+
+      // Passe 1 : backend down → l'opération est mise en attente.
+      var backendMode = 'down';
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        if (backendMode == 'down') {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionError,
+            error: const SocketException('backend down'),
+          );
+        }
+        return _json({
+          'error': {'message': 'Solde disponible insuffisant pour cette dépense'},
+        }, 409);
+      });
+
+      await Outbox.instance.createTransaction('w1', _expense());
+      var cached = jsonDecode(prefs.getString('cache_wallet')!) as Map<String, dynamic>;
+      expect(cached['balance'], 95000, reason: 'effet optimiste appliqué');
+
+      // Passe 2 : backend up mais refuse (409) → rollback.
+      backendMode = 'up409';
+      final result = await Outbox.instance.flush();
+
+      expect(result.replayed, 0);
+      expect(result.failures, hasLength(1));
+      expect(result.failures.first.message, contains('Solde disponible insuffisant'));
+      expect(await Outbox.instance.count(), 0);
+
+      cached = jsonDecode(prefs.getString('cache_wallet')!) as Map<String, dynamic>;
+      expect(cached['balance'], 100000, reason: 'rollback : le solde est restauré');
+      expect(await Outbox.instance.pendingTransactions(), isEmpty);
     });
 
     test('une erreur métier (4xx) abandonne l’opération au lieu de boucler', () async {
@@ -270,8 +308,9 @@ void main() {
         );
       });
 
-      final replayed = await Outbox.instance.flush();
-      expect(replayed, 1);
+      final result = await Outbox.instance.flush();
+      expect(result.replayed, 1);
+      expect(result.hasFailures, isFalse);
       expect(posted, hasLength(1));
       expect(posted.first['includeSavings'], isFalse);
       expect(await Outbox.instance.count(), 0);

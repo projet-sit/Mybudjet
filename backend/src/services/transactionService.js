@@ -91,6 +91,13 @@ async function exportCsv(uid, walletId) {
 
   const header = 'Date;Heure;Type;Categorie;Description;Mode de paiement;Montant;Solde apres';
   let running = Number(wallet.initialAmount);
+  const typeLabels = {
+    'expense': 'Dépense',
+    'income': 'Revenu',
+    'savings_deposit': 'Versement épargne',
+    'savings_withdrawal': 'Retrait épargne',
+  };
+
   const lines = transactions.map((t) => {
     // Les opérations d'épargne ne modifient pas le solde (même compte).
     const delta = t.type === 'income' ? t.amount : (t.type === 'expense' ? -t.amount : 0);
@@ -98,7 +105,7 @@ async function exportCsv(uid, walletId) {
     return [
       t.date,
       t.time,
-      t.type,
+      typeLabels[t.type] || t.type,
       t.category,
       t.description,
       t.paymentMethod,

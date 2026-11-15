@@ -55,6 +55,7 @@ class HomeScreen extends ConsumerWidget {
     final walletState = ref.watch(walletControllerProvider);
     final dashboardState = ref.watch(dashboardControllerProvider);
     final sync = ref.watch(syncInfoProvider);
+    final notice = ref.watch(syncNoticeProvider);
     final offline = sync.isOffline;
     final pending = sync.isPending;
     final wallet = walletState.value;
@@ -71,6 +72,49 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
+          if (notice != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.sync_problem_rounded, size: 18, color: scheme.error),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${notice.failedCount} opération${notice.failedCount > 1 ? 's' : ''} non synchronisée${notice.failedCount > 1 ? 's' : ''}. ${notice.message}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.error),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Réessayer',
+                    icon: Icon(Icons.refresh_rounded, size: 18, color: scheme.error),
+                    onPressed: () async {
+                      await ref.read(transactionsProvider.notifier).refreshAll();
+                      if (context.mounted &&
+                          ref.read(syncNoticeProvider) == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Synchronisation terminée')),
+                        );
+                      }
+                    },
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Ignorer',
+                    icon: Icon(Icons.close_rounded, size: 18, color: scheme.error),
+                    onPressed: () => ref.read(syncNoticeProvider.notifier).clear(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (offline || pending) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

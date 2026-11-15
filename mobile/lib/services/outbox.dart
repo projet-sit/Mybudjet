@@ -64,6 +64,24 @@ class OutboxOp {
       };
 }
 
+/// Résultat d'un flush : combien d'opérations rejouées + échecs définitifs.
+class FlushResult {
+  const FlushResult({required this.replayed, required this.failures});
+
+  final int replayed;
+  final List<FlushFailure> failures;
+
+  bool get hasFailures => failures.isNotEmpty;
+}
+
+class FlushFailure {
+  const FlushFailure({required this.opId, required this.kind, required this.message});
+
+  final String opId;
+  final String kind;
+  final String message;
+}
+
 /// Résultat d'une écriture : soit envoyée, soit mise en attente.
 class WriteResult {
   const WriteResult._(this.queued, this.transaction);
@@ -343,6 +361,8 @@ class Outbox {
         final pending = await pendingTransactions();
         pending.removeWhere((t) => t.id == tx.id);
         await _savePendingTransactions(pending);
+        // Annule l'effet optimiste de la création en attente.
+        await _adjustCachedWalletForTx(walletId, tx, sign: -1);
         // Annule l'opération de création en attente s'il y en avait une.
         final ops = await _load();
         ops.removeWhere((o) => o.id == tx.id && o.kind == OutboxKind.transactionCreate);
@@ -352,11 +372,13 @@ class Outbox {
       final deleted = await deletedTransactionIds();
       deleted.add(tx.id);
       await _saveDeletedIds(deleted);
+      // Effet optimiste : le solde reprend la contribution de la transaction supprimée.
+      await _adjustCachedWalletForTx(walletId, tx, sign: -1);
       await enqueue(OutboxOp(
         id: tx.id,
         kind: OutboxKind.transactionDelete,
         walletId: walletId,
-        payload: {'id': tx.id},
+        payload: {'id': tx.id, 'tx': tx.toJson()},
         createdAt: DateTime.now(),
       ));
       return const WriteResult.queued();
@@ -584,9 +606,14 @@ class Outbox {
 
   /// Rejoue les opérations en attente, dans l'ordre. S'arrête à la première
   /// erreur réseau (les suivantes attendront le prochain passage).
-  /// Retourne le nombre d'opérations rejouées.
-  Future<int> flush() async {
+  ///
+  /// - erreur réseau/timeout : l'opération est conservée, elle sera rejouée ;
+  /// - erreur métier définitive (4xx) ou autre exception : l'opération est
+  ///   abandonnée ET l'effet optimiste local est annulé (rollback), et le
+  ///   problème est remonté à l'utilisateur via [FlushResult.failures].
+  Future<FlushResult> flush() async {
     var replayed = 0;
+    final failures = <FlushFailure>[];
     while (true) {
       final ops = await _load();
       if (ops.isEmpty) break;
@@ -595,13 +622,14 @@ class Outbox {
         await _execute(op);
       } on DioException catch (e) {
         if (_isNetworkish(e)) break; // encore injoignable : on réessaie plus tard
-        // Erreur métier (4xx) : opération obsolète, on l'abandonne.
+        await _rollbackOp(op);
+        failures.add(FlushFailure(opId: op.id, kind: op.kind, message: _errorMessage(e)));
         await _remove(op.id);
-        await _dropServerSideOverlay(op);
         continue;
-      } catch (_) {
+      } catch (e) {
+        await _rollbackOp(op);
+        failures.add(FlushFailure(opId: op.id, kind: op.kind, message: _errorMessage(e)));
         await _remove(op.id);
-        await _dropServerSideOverlay(op);
         continue;
       }
       await _remove(op.id);
@@ -613,7 +641,100 @@ class Outbox {
     if (replayed > 0) {
       await clearOverlayIfAllSynced();
     }
-    return replayed;
+    return FlushResult(replayed: replayed, failures: failures);
+  }
+
+  /// Message d'erreur lisible à partir d'une erreur d'exécution.
+  static String _errorMessage(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map<String, dynamic> && data['error'] is Map<String, dynamic>) {
+        final message = (data['error'] as Map<String, dynamic>)['message'];
+        if (message is String && message.trim().isNotEmpty) return message;
+      }
+      if (data is Map && data['message'] is String && (data['message'] as String).trim().isNotEmpty) {
+        return data['message'] as String;
+      }
+      return 'Synchronisation indisponible — réessayez';
+    }
+    return 'Une erreur est survenue';
+  }
+
+  /// Annule l'effet optimiste local d'une opération refusée définitivement,
+  /// pour que le cache redevienne cohérent sans action de l'utilisateur.
+  Future<void> _rollbackOp(OutboxOp op) async {
+    switch (op.kind) {
+      case OutboxKind.transactionCreate:
+        // La transaction optimiste portait le même id : on la retire et on annule le solde.
+        final pending = await pendingTransactions();
+        final idx = pending.indexWhere((t) => t.id == op.id);
+        if (idx >= 0) {
+          final tx = pending.removeAt(idx);
+          await _savePendingTransactions(pending);
+          await _adjustCachedWalletForTx(op.walletId, tx, sign: -1);
+        }
+        break;
+      case OutboxKind.transactionUpdate:
+        final updates = await updatedTransactions();
+        updates.remove(op.id);
+        await _saveUpdatedTransactions(updates);
+        break;
+      case OutboxKind.transactionDelete:
+        final deleted = await deletedTransactionIds();
+        deleted.remove(op.id);
+        await _saveDeletedIds(deleted);
+        // Re-applique l'effet solde (l'opération « supprimer » échouant, la dépense réexiste).
+        final raw = op.payload['tx'];
+        if (raw is Map) {
+          try {
+            final tx = Transaction.fromJson(Map<String, dynamic>.from(raw));
+            await _adjustCachedWalletForTx(op.walletId, tx, sign: 1);
+          } catch (_) {
+            // L'état serveur fera foi à la prochaine revalidation.
+          }
+        }
+        break;
+      case OutboxKind.savingsDeposit:
+      case OutboxKind.savingsWithdraw:
+      case OutboxKind.savingsWithdrawAll:
+        final txId = op.payload['txId'] as String?;
+        if (txId != null) {
+          final pending = await pendingTransactions();
+          final idx = pending.indexWhere((t) => t.id == txId);
+          if (idx >= 0) {
+            final tx = pending.removeAt(idx);
+            await _savePendingTransactions(pending);
+            await _adjustCachedWalletForTx(op.walletId, tx, sign: -1);
+          }
+        }
+        break;
+      case OutboxKind.budgetUpsert:
+        if (op.id.startsWith('local_')) {
+          // Budget jamais créé côté serveur : le purger du cache local.
+          try {
+            final budgets = await CacheService.instance.loadBudgets(op.walletId);
+            if (budgets.any((b) => b.id == op.id)) {
+              await CacheService.instance.saveBudgets(
+                op.walletId,
+                budgets
+                    .where((b) => b.id != op.id)
+                    .map((b) => b.toJson())
+                    .toList(),
+              );
+            }
+          } catch (_) {
+            // La prochaine synchronisation corrigera le cache.
+          }
+        }
+        break;
+      case OutboxKind.budgetDelete:
+        // Suppression refusée : le budget réapparaîtra à la prochaine revalidation.
+        break;
+      case OutboxKind.resetAll:
+        // Remise à zéro refusée : la coupure locale est levée (l'état serveur fait foi).
+        await _setHiddenBefore(null);
+        break;
+    }
   }
 
   /// Retire l'overlay local correspondant à une opération acceptée par le serveur.
@@ -717,16 +838,19 @@ class Outbox {
   }
 
   /// Enregistre un versement/retrait d'épargne en attente (hors-ligne).
+  /// [txId] : identifiant de la transaction optimiste correspondante
+  /// (permet d'annuler proprement si le serveur refuse).
   Future<void> enqueueSavings(
     String walletId, {
     required String kind, // OutboxKind.savings*
     int? amount,
+    String? txId,
   }) async {
     await enqueue(OutboxOp(
       id: '${kind}_${DateTime.now().millisecondsSinceEpoch}',
       kind: kind,
       walletId: walletId,
-      payload: {'amount': ?amount},
+      payload: {'amount': ?amount, 'txId': ?txId},
       createdAt: DateTime.now(),
     ));
   }

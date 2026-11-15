@@ -297,7 +297,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               );
               if (confirmed == true) {
-                await ref.read(authControllerProvider.notifier).logout();
+                try {
+                  await ref.read(authControllerProvider.notifier).logout();
+                } catch (_) {
+                  // La déconnexion locale prime : on continue vers le login.
+                  ref.invalidate(authControllerProvider);
+                }
               }
             },
             icon: const Icon(Icons.logout, size: 18),
@@ -376,8 +381,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(authControllerProvider.notifier).deleteAccount();
-      if (mounted) context.go('/login');
+      try {
+        await ref.read(authControllerProvider.notifier).deleteAccount();
+        if (mounted) context.go('/login');
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AuthController.messageFrom(e))),
+        );
+      }
     }
   }
   Widget _sectionLabel(BuildContext context, String label) {

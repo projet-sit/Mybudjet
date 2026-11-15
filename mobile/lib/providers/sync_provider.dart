@@ -73,3 +73,29 @@ final offlineProvider = Provider<bool>((ref) {
   final info = ref.watch(syncInfoProvider);
   return info.state == SyncState.offline || info.state == SyncState.pending;
 });
+
+/// Avis de synchronisation : opérations abandonnées après échec définitif.
+/// Affiché dans le bandeau d'accueil pour que l'utilisateur soit informé.
+class SyncNotice {
+  const SyncNotice({required this.failedCount, required this.message});
+
+  final int failedCount;
+  final String message;
+}
+
+class SyncNoticeController extends Notifier<SyncNotice?> {
+  @override
+  SyncNotice? build() => null;
+
+  void setFailed(int failedCount, String message) {
+    if (failedCount <= 0) return;
+    state = SyncNotice(failedCount: failedCount, message: message);
+  }
+
+  void clear() {
+    if (state != null) state = null;
+  }
+}
+
+final syncNoticeProvider =
+    NotifierProvider<SyncNoticeController, SyncNotice?>(SyncNoticeController.new);

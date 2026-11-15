@@ -61,7 +61,7 @@ class TransactionPdfExportService {
         .where((transaction) => transaction.isExpense)
         .fold<int>(0, (sum, transaction) => sum + transaction.amount);
     final incomes = transactions
-        .where((transaction) => !transaction.isExpense)
+        .where((transaction) => transaction.isIncome)
         .fold<int>(0, (sum, transaction) => sum + transaction.amount);
     final generatedAt = DateFormat('dd/MM/yyyy à HH:mm', 'fr_FR').format(DateTime.now());
 
@@ -117,11 +117,16 @@ class TransactionPdfExportService {
             pw.TableHelper.fromTextArray(
               headers: const ['Date', 'Heure', 'Type', 'Catégorie', 'Description', 'Mode de paiement', 'Montant'],
               data: transactions.map((transaction) {
-                final sign = transaction.isExpense ? '- ' : '+ ';
+                final sign = transaction.isSavings
+                    ? ''
+                    : (transaction.isExpense ? '- ' : '+ ');
+                final typeLabel = transaction.isSavings
+                    ? 'Épargne'
+                    : (transaction.isExpense ? 'Dépense' : 'Revenu');
                 return [
                   formatDateFr(transaction.date),
                   transaction.time,
-                  transaction.isExpense ? 'Dépense' : 'Revenu',
+                  typeLabel,
                   transaction.category,
                   transaction.description?.trim().isNotEmpty == true
                       ? transaction.description!.trim()

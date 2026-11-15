@@ -29,6 +29,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _obscure = true;
   bool _acceptedCgu = false;
   bool _offline = false;
+  AuthMode? _errorMode; // mode dans lequel l'erreur courante est survenue
 
   bool get _isRegister => _mode == AuthMode.register;
 
@@ -58,6 +59,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       return;
     }
     FocusScope.of(context).unfocus();
+    setState(() => _errorMode = _mode);
     if (_isRegister) {
       await ref.read(authControllerProvider.notifier).register(
             displayName: _nameController.text.trim(),
@@ -81,6 +83,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   void _switchMode(AuthMode mode) {
     setState(() {
       _mode = mode;
+      _errorMode = null; // n'affiche plus l'erreur de l'autre onglet
       _formKey.currentState?.reset();
     });
   }
@@ -102,7 +105,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final scheme = Theme.of(context).colorScheme;
     final authState = ref.watch(authControllerProvider);
     final loading = authState.isLoading;
-    final error = authState.hasError ? AuthController.messageFrom(authState.error!) : null;
+    final error = authState.hasError && _errorMode == _mode
+        ? AuthController.messageFrom(authState.error!)
+        : null;
 
     return Scaffold(
       body: SafeArea(

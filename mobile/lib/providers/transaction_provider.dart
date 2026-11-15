@@ -149,9 +149,17 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
 
   Future<void> _flushOutboxQuietly() async {
     try {
-      final replayed = await Outbox.instance.flush();
-      if (replayed > 0) {
+      final result = await Outbox.instance.flush();
+      if (result.replayed > 0 || result.hasFailures) {
         await ref.read(syncInfoProvider.notifier).refresh();
+      }
+      if (result.hasFailures) {
+        ref.read(syncNoticeProvider.notifier).setFailed(
+              result.failures.length,
+              result.failures.first.message,
+            );
+      } else {
+        ref.read(syncNoticeProvider.notifier).clear();
       }
     } catch (_) {
       // Laisse la place à un autre passage (réseau, prochain resume…).
@@ -271,7 +279,15 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
   /// liste + solde + dashboard, et attend réellement les rechargements.
   /// Se termine toujours (jamais de chargement infini).
   Future<void> refreshAll() async {
-    await Outbox.instance.flush();
+    final flushResult = await Outbox.instance.flush();
+    if (flushResult.hasFailures) {
+      ref.read(syncNoticeProvider.notifier).setFailed(
+            flushResult.failures.length,
+            flushResult.failures.first.message,
+          );
+    } else if (flushResult.replayed > 0) {
+      ref.read(syncNoticeProvider.notifier).clear();
+    }
     ref.invalidate(dashboardControllerProvider);
     ref.invalidate(walletControllerProvider);
     ref.invalidate(budgetsControllerProvider);

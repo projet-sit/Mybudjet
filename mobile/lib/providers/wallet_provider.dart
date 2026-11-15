@@ -113,7 +113,11 @@ class WalletController extends AsyncNotifier<Wallet?> {
           // L'overlay applique la totalité : l'épargne passe à 0 côté cache.
           await Outbox.instance.applyPendingTransactionLocally(current.id, tx);
         }
-        await Outbox.instance.enqueueSavings(current.id, kind: OutboxKind.savingsWithdrawAll);
+        await Outbox.instance.enqueueSavings(
+          current.id,
+          kind: OutboxKind.savingsWithdrawAll,
+          txId: tx.id,
+        );
         final updated = await CacheService.instance.loadWallet();
         if (updated != null) state = AsyncData(updated);
         return const WriteResult.queued();
@@ -148,6 +152,7 @@ class WalletController extends AsyncNotifier<Wallet?> {
         current.id,
         kind: isDeposit ? OutboxKind.savingsDeposit : OutboxKind.savingsWithdraw,
         amount: amount,
+        txId: tx.id,
       );
       final updated = await CacheService.instance.loadWallet();
       if (updated != null) state = AsyncData(updated);

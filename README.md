@@ -93,6 +93,20 @@ cd mobile && flutter test
 - **Monitoring** : aucun SDK externe requis ; les logs Render suffisent à détecter erreurs 5xx et crashs clients. Pour aller plus loin : brancher `POST /client-errors` sur Sentry/Logtail (une ligne dans `ErrorReporter`).
 - **CORS** : `CORS_ORIGIN=*` en Render ; restreindre aux domaines de l'app en prod réelle.
 
+## Télécharger l'app (APK)
+
+**Lien stable (toujours la dernière version)** :
+
+```
+https://github.com/projet-sit/Mybudjet/releases/download/latest/app-arm64-v8a-direct-release-obfuscated.apk
+```
+
+Version actuelle : **v1.1.0** — `https://github.com/projet-sit/Mybudjet/releases/download/v1.1.0/app-arm64-v8a-direct-release-obfuscated.apk`
+
+SHA-256 : `7e891ee04b3ee8fb284ce5920058cb05e0059a7e85d8ec685059da573190ca08`
+
+Android arm64, signé avec la clé de release (mise à jour directe par dessus les APK précédents).
+
 ## APK de production
 
 ```bash

@@ -31,4 +31,17 @@ async function undoPeriod(uid, walletId, periodId) {
   return periodRepository.undoPeriod({ walletId: wallet.id, userId: uid, periodId });
 }
 
-module.exports = { getPeriod, nextPeriod, undoPeriod };
+async function listPeriods(uid, walletId) {
+  const wallet = await walletService.getWallet(uid, walletId);
+  return { periods: await periodRepository.listPeriods(wallet.id) };
+}
+
+async function restorePeriod(uid, walletId, periodId) {
+  const wallet = await walletService.getWallet(uid, walletId);
+  if (!/^[0-9a-f-]{36}$/i.test(String(periodId || ''))) {
+    throw ApiError.validation('Identifiant de période invalide');
+  }
+  return periodRepository.restorePeriod({ walletId: wallet.id, userId: uid, periodId });
+}
+
+module.exports = { getPeriod, nextPeriod, undoPeriod, listPeriods, restorePeriod };

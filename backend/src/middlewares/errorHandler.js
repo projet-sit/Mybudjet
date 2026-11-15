@@ -1,4 +1,5 @@
 const env = require('../config/env');
+const logger = require('../utils/logger');
 
 function notFoundHandler(req, res) {
   return res.status(404).json({
@@ -12,7 +13,14 @@ function errorHandler(err, req, res, _next) {
   const code = err.code || (statusCode === 500 ? 'INTERNAL_ERROR' : 'ERROR');
 
   if (statusCode >= 500) {
-    console.error(`[${new Date().toISOString()}]`, req.method, req.originalUrl, '\n', err);
+    logger.error('request_error', {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      status: statusCode,
+      code,
+      err: (err && err.stack) || String(err),
+    });
     if (err.code === 'auth/id-token-expired') {
       return res.status(401).json({
         success: false,

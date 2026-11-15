@@ -21,24 +21,35 @@ async function totals(walletId, periodId) {
   };
 }
 
-/** Série journalière (dépenses) sur N derniers jours, incluant les jours vides. */
+/** Série journalière (dépenses) sur N derniers jours (heure locale du Bénin), jours vides inclus. */
 async function dailyExpensesSeries(walletId, days = 7, periodId) {
-  const params = [walletId, days];
+  const { localDaysAgoIso, todayIso } = require('../utils/dates');
+  const startIso = localDaysAgoIso(days - 1);
+  const params = [walletId, startIso];
   let periodClause = '';
   if (periodId) {
     params.push(periodId);
-    periodClause = `AND t.period_id = $${params.length}`;
+    periodClause = `AND period_id = $${params.length}`;
   }
   const { rows } = await query(
-    `SELECT d::date AS day,
-            COALESCE(SUM(t.amount), 0) AS total
-     FROM generate_series(CURRENT_DATE - ($2::int - 1), CURRENT_DATE, '1 day') AS d
-     LEFT JOIN transactions t
-       ON t.wallet_id = $1 AND t.type = 'expense' AND t.date = d::date ${periodClause}
-     GROUP BY d::date ORDER BY d::date ASC`,
+    `SELECT date AS day, amount
+     FROM transactions
+     WHERE wallet_id = $1 AND type = 'expense' AND date >= $2::date ${periodClause}`,
     params
   );
-  return rows.map((r) => ({ date: r.day, expenses: Number(r.total) }));
+  const byDay = new Map();
+  for (const r of rows) {
+    const key = new Date(r.day).toISOString().slice(0, 10);
+    byDay.set(key, (byDay.get(key) || 0) + Number(r.amount));
+  }
+  const result = [];
+  const today = new Date(`${todayIso()}T00:00:00Z`);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 86400000);
+    const key = d.toISOString().slice(0, 10);
+    result.push({ date: key, expenses: byDay.get(key) || 0 });
+  }
+  return result;
 }
 
 /** Répartition par catégorie (dépenses) sur une période. */
@@ -78,31 +89,45 @@ async function latest(walletId, limit = 5, periodId) {
   return rows.map(toTransaction);
 }
 
-/** Série mensuelle (dépenses et revenus) sur les N derniers mois. */
+/** Série mensuelle (dépenses et revenus) sur les N derniers mois (heure locale du Bénin). */
 async function monthlySeries(walletId, months = 6) {
+  const { localIsoParts } = require('../utils/dates');
+  const now = localIsoParts();
+  // Premier jour du mois il y a (months-1) mois, heure locale.
+  let y = now.year;
+  let m = now.month - (months - 1);
+  while (m <= 0) {
+    m += 12;
+    y -= 1;
+  }
+  const startIso = `${y}-${String(m).padStart(2, '0')}-01`;
   const { rows } = await query(
-    `SELECT to_char(m.month_start, 'YYYY-MM') AS month,
-            COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount END), 0) AS expenses,
-            COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount END), 0) AS incomes
-     FROM (
-       SELECT generate_series(
-         date_trunc('month', CURRENT_DATE) - (($2::int - 1) * interval '1 month'),
-         date_trunc('month', CURRENT_DATE),
-         '1 month'
-       ) AS month_start
-     ) m
-     LEFT JOIN transactions t
-       ON t.wallet_id = $1
-      AND date_trunc('month', t.date) = m.month_start
-     GROUP BY m.month_start
-     ORDER BY m.month_start ASC`,
-    [walletId, months]
+    `SELECT date AS day, type, amount
+     FROM transactions
+     WHERE wallet_id = $1 AND date >= $2::date`,
+    [walletId, startIso]
   );
-  return rows.map((r) => ({
-    month: r.month,
-    expenses: Number(r.expenses),
-    incomes: Number(r.incomes),
-  }));
+  const byMonth = new Map();
+  for (const r of rows) {
+    const key = new Date(r.day).toISOString().slice(0, 7);
+    const bucket = byMonth.get(key) || { expenses: 0, incomes: 0 };
+    if (r.type === 'expense') bucket.expenses += Number(r.amount);
+    else if (r.type === 'income') bucket.incomes += Number(r.amount);
+    byMonth.set(key, bucket);
+  }
+  const result = [];
+  for (let i = months - 1; i >= 0; i--) {
+    let yy = y;
+    let mm = m + i;
+    while (mm > 12) {
+      mm -= 12;
+      yy += 1;
+    }
+    const key = `${yy}-${String(mm).padStart(2, '0')}`;
+    const value = byMonth.get(key) || { expenses: 0, incomes: 0 };
+    result.push({ month: key, expenses: value.expenses, incomes: value.incomes });
+  }
+  return result;
 }
 
 /** Période : totaux entre deux dates. */

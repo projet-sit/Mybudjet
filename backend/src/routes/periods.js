@@ -47,4 +47,22 @@ router.post('/:walletId/period/:periodId/undo', async (req, res, next) => {
   }
 });
 
+router.get('/:walletId/periods', async (req, res, next) => {
+  try {
+    const data = await periodService.listPeriods(req.uid, requireWalletId(req));
+    return success(res, data);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/:walletId/periods/:periodId/restore', async (req, res, next) => {
+  try {
+    const data = await periodService.restorePeriod(req.uid, requireWalletId(req), req.params.periodId);
+    return success(res, data);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 module.exports = router;

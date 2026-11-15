@@ -219,6 +219,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             context,
             children: [
               ListTile(
+                leading: Icon(Icons.archive_outlined, color: scheme.primary),
+                title: const _TileTitle('Historique des périodes'),
+                subtitle: const _TileSubtitle('Mois archivés, totaux, restauration'),
+                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                onTap: () => context.push('/periods'),
+              ),
+              Divider(height: 1, color: scheme.outline),
+              ListTile(
                 leading: Icon(Icons.savings_outlined, color: scheme.primary),
                 title: const _TileTitle('Mon épargne'),
                 subtitle: _TileSubtitle(

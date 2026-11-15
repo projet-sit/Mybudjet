@@ -1,5 +1,88 @@
 import 'wallet.dart';
 
+class PeriodSummary {
+  const PeriodSummary({
+    required this.id,
+    required this.walletId,
+    required this.startDate,
+    required this.endDate,
+    required this.status,
+    required this.totals,
+    this.walletAtClose,
+    this.closedAt,
+  });
+
+  final String id;
+  final String walletId;
+  final String startDate; // YYYY-MM-DD
+  final String endDate; // YYYY-MM-DD
+  final String status; // active | archived
+  final PeriodSummaryTotals totals;
+  final PeriodSnapshotWallet? walletAtClose;
+  final DateTime? closedAt;
+
+  bool get isActive => status == 'active';
+
+  factory PeriodSummary.fromJson(Map<String, dynamic> json) {
+    return PeriodSummary(
+      id: json['id'] as String,
+      walletId: (json['walletId'] ?? '') as String,
+      startDate: (json['startDate'] ?? '') as String,
+      endDate: (json['endDate'] ?? '') as String,
+      status: (json['status'] ?? 'archived') as String,
+      totals: PeriodSummaryTotals.fromJson(
+        Map<String, dynamic>.from(json['totals'] as Map? ?? const {}),
+      ),
+      walletAtClose: json['walletAtClose'] is Map
+          ? PeriodSnapshotWallet.fromJson(Map<String, dynamic>.from(json['walletAtClose'] as Map))
+          : null,
+      closedAt: json['closedAt'] != null ? DateTime.tryParse(json['closedAt'] as String) : null,
+    );
+  }
+}
+
+class PeriodSummaryTotals {
+  const PeriodSummaryTotals({
+    this.expenses = 0,
+    this.incomes = 0,
+    this.saved = 0,
+    this.transactions = 0,
+  });
+
+  final int expenses;
+  final int incomes;
+  final int saved;
+  final int transactions;
+
+  factory PeriodSummaryTotals.fromJson(Map<String, dynamic> json) => PeriodSummaryTotals(
+        expenses: Wallet.asInt(json['expenses']),
+        incomes: Wallet.asInt(json['incomes']),
+        saved: Wallet.asInt(json['saved']),
+        transactions: Wallet.asInt(json['transactions']),
+      );
+}
+
+class PeriodSnapshotWallet {
+  const PeriodSnapshotWallet({
+    required this.initialAmount,
+    required this.balance,
+    required this.savingsAmount,
+    required this.startDate,
+  });
+
+  final int initialAmount;
+  final int balance;
+  final int savingsAmount;
+  final String startDate;
+
+  factory PeriodSnapshotWallet.fromJson(Map<String, dynamic> json) => PeriodSnapshotWallet(
+        initialAmount: Wallet.asInt(json['initialAmount']),
+        balance: Wallet.asInt(json['balance']),
+        savingsAmount: Wallet.asInt(json['savingsAmount']),
+        startDate: (json['startDate'] ?? '') as String,
+      );
+}
+
 class BudgetPeriod {
   const BudgetPeriod({
     required this.id,

@@ -100,16 +100,18 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
     await _applyServerReset(ref, result);
     if (!context.mounted) return;
     _snack(context, includeSavings ? 'Portefeuille et épargne remis à zéro' : 'Portefeuille remis à zéro (épargne conservée)');
-    _offerUndo(context, ref, wallet.id, result.previousPeriodId);
+    _offerUndo(context, ref, wallet.id, result.period.id);
   } on DioException catch (e) {
     if (_isNetworkish(e)) {
       // Hors-ligne : l'opération attendra le retour du réseau, l'écran est déjà à jour.
+      await Outbox.instance.createResetBackup(wallet.id);
       await Outbox.instance.applyResetLocally(wallet.id, includeSavings: includeSavings);
       await Outbox.instance.enqueueReset(wallet.id, includeSavings: includeSavings);
       _invalidateAll(ref);
       await ref.read(syncInfoProvider.notifier).refresh();
       if (!context.mounted) return;
       _snack(context, 'Remise à zéro enregistrée — elle sera synchronisée au retour du réseau');
+      _offerUndoLocal(context, ref, wallet.id);
       return;
     }
     final data = e.response?.data;
@@ -142,8 +144,8 @@ void _invalidateAll(WidgetRef ref) {
   ref.invalidate(statsControllerProvider);
 }
 
-void _offerUndo(BuildContext context, WidgetRef ref, String walletId, String? previousPeriodId) {
-  if (previousPeriodId == null) return;
+void _offerUndo(BuildContext context, WidgetRef ref, String walletId, String? newPeriodId) {
+  if (newPeriodId == null) return;
   final messenger = ScaffoldMessenger.of(context);
   messenger.showSnackBar(
     SnackBar(
@@ -153,10 +155,42 @@ void _offerUndo(BuildContext context, WidgetRef ref, String walletId, String? pr
         label: 'Annuler',
         onPressed: () async {
           try {
-            final result = await PeriodRepository.instance.undo(walletId, previousPeriodId);
+            // Le backend attend l'identifiant de la NOUVELLE période active créée par le reset.
+            final result = await PeriodRepository.instance.undo(walletId, newPeriodId);
             ref.read(walletControllerProvider.notifier).setWallet(result.wallet);
             _invalidateAll(ref);
             messenger.showSnackBar(const SnackBar(content: Text('Remise à zéro annulée')));
+          } catch (_) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Annulation impossible (délai dépassé)')),
+            );
+          }
+        },
+      ),
+    ),
+  );
+}
+
+void _offerUndoLocal(BuildContext context, WidgetRef ref, String walletId) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(
+    SnackBar(
+      content: const Text('Remise à zéro enregistrée — annulation possible pendant 10 secondes'),
+      duration: const Duration(seconds: 10),
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () async {
+          try {
+            final restored = await Outbox.instance.restoreResetBackup(walletId);
+            if (restored) {
+              _invalidateAll(ref);
+              await ref.read(syncInfoProvider.notifier).refresh();
+              messenger.showSnackBar(const SnackBar(content: Text('Remise à zéro annulée')));
+            } else {
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Annulation impossible (délai dépassé)')),
+              );
+            }
           } catch (_) {
             messenger.showSnackBar(
               const SnackBar(content: Text('Annulation impossible (délai dépassé)')),

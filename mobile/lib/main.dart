@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -14,10 +16,18 @@ import 'providers/transaction_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'routing/app_router.dart';
 import 'services/api_client.dart';
+import 'services/error_reporter.dart';
 import 'services/outbox.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorReporter.installGlobalHooks();
+  await runZonedGuarded(() async {
+    await _bootstrap();
+  }, (error, stack) => ErrorReporter.reportError(error: error, stack: stack, screen: 'zone'));
+}
+
+Future<void> _bootstrap() async {
   await dotenv.load(fileName: '.env');
   await initializeDateFormatting('fr_FR');
   // Lu AVANT runApp : pas de clignotement de l'onboarding au démarrage.

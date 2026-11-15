@@ -6,7 +6,11 @@
 
 ALTER TABLE transactions ALTER COLUMN type TYPE VARCHAR(20);
 
+-- Le nom du CHECK inline varie selon l'implémentation (transactions_type_check en Postgres,
+-- autre auto-généré ailleurs) : on purge les deux par prudence (IF EXISTS).
 ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_constraint_1;
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check1;
 ALTER TABLE transactions ADD CONSTRAINT transactions_type_check
   CHECK (type IN ('expense', 'income', 'savings_deposit', 'savings_withdrawal'));
 

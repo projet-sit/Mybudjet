@@ -29,6 +29,9 @@ if (env.nodeEnv !== 'test') {
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 }
 
+const { requestLogger } = require('./middlewares/requestLogger');
+app.use(requestLogger);
+
 app.use(
   rateLimit({
     windowMs: env.rateLimit.windowMs,
@@ -44,6 +47,7 @@ app.use('/', cielRoutes);
 app.use('/api/v1', cielRoutes);
 
 app.use('/api/v1/health', healthRoutes);
+app.use('/api/v1/client-errors', require('./routes/clientErrors'));
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/wallets', walletRoutes);
 app.use('/api/v1/wallets', transactionRoutes);

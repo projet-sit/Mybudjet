@@ -285,14 +285,72 @@ class Outbox {
     return d ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  /// Vide tout l'overlay (après une synchronisation complète).
-  Future<void> clearOverlay() async {
+  /// Sauvegarde locale des données avant une remise à zéro optimiste.
+  /// Permet d'annuler instantanément hors-ligne (dans les 10 s).
+  Future<void> createResetBackup(String walletId) async {
     final prefs = await _prefs;
-    await prefs.remove(_pendingTxKey);
-    await prefs.remove(_deletedIdsKey);
-    await prefs.remove(_updatedTxKey);
-    await prefs.remove(_hiddenBeforeKey);
+    Future<String?> read(String key) async => prefs.getString(key);
+    final backup = <String, String?>{
+      'wallet': await read('cache_wallet'),
+      'dashboard': await read('cache_dashboard_$walletId'),
+      'transactions': await read('cache_txs_$walletId'),
+      'budgets': await read('cache_budgets_$walletId'),
+      'hidden_before': await read('outbox_hidden_before'),
+      'takenAt': DateTime.now().toIso8601String(),
+    };
+    await prefs.setString('reset_backup_$walletId', jsonEncode(backup));
   }
+
+  /// Restaure la sauvegarde locale et retire l'opération de remise à zéro
+  /// en attente (elle n'a peut-être jamais atteint le serveur).
+  /// Retourne true si la restauration a eu lieu.
+  Future<bool> restoreResetBackup(String walletId) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString('reset_backup_$walletId');
+    if (raw == null) return false;
+    Map<String, dynamic> backup;
+    try {
+      backup = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return false;
+    }
+    // Supprime la sauvegarde : l'annulation est à usage unique.
+    await prefs.remove('reset_backup_$walletId');
+
+    Future<void> write(String key, String? value) async {
+      if (value != null) {
+        await prefs.setString(key, value);
+      } else {
+        await prefs.remove(key);
+      }
+    }
+
+    await write('cache_wallet', backup['wallet'] as String?);
+    await write('cache_dashboard_$walletId', backup['dashboard'] as String?);
+    await write('cache_txs_$walletId', backup['transactions'] as String?);
+    await write('cache_budgets_$walletId', backup['budgets'] as String?);
+    await write('outbox_hidden_before', backup['hidden_before'] as String?);
+
+    // Retire l'opération resetAll la plus récente encore en attente.
+    final ops = await _load();
+    final fallback = OutboxOp(
+      id: '',
+      kind: '',
+      walletId: '',
+      payload: const {},
+      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    final lastReset = ops.lastWhere(
+      (o) => o.kind == OutboxKind.resetAll,
+      orElse: () => fallback,
+    );
+    if (lastReset.id.isNotEmpty) {
+      await removePendingOp(lastReset.id);
+    }
+    return true;
+  }
+
+  // ---------- Overlay local (transactions créées/supprimées/modifiées) ----------
 
   // ---------- Écritures : tentative serveur puis mise en attente ----------
 

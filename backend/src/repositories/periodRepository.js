@@ -294,6 +294,130 @@ async function resetWithArchive({ walletId, userId, includeSavings = false, toda
   });
 }
 
+async function listPeriods(walletId) {
+  // Périodes par portefeuille : peu nombreuses. On charge puis on filtre en JS
+  // (évite un planner fragile et reste portable Postgres/pg-mem).
+  const { rows: allRows } = await query(
+    `SELECT * FROM periods ORDER BY start_date DESC, created_at DESC`
+  );
+  const rows = allRows.filter((r) => r.wallet_id === walletId);
+  const result = [];
+  for (const row of rows) {
+    const totals = await query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) AS expenses,
+         COALESCE(SUM(CASE WHEN type = 'income' THEN amount END), 0) AS incomes,
+         COALESCE(SUM(CASE WHEN type = 'savings_deposit' THEN amount END), 0) AS saved,
+         COUNT(*) AS count
+       FROM transactions WHERE period_id = $1`,
+      [row.id]
+    );
+    const s = totals.rows[0];
+    const snapshot = row.snapshot || {};
+    result.push({
+      id: row.id,
+      walletId: row.wallet_id,
+      startDate: toDateOnly(row.start_date),
+      endDate: toDateOnly(row.end_date),
+      status: row.status,
+      totals: {
+        expenses: Number(s.expenses),
+        incomes: Number(s.incomes),
+        saved: Number(s.saved),
+        transactions: Number(s.count),
+      },
+      walletAtClose: snapshot.wallet || null,
+      closedAt: row.closed_at || null,
+    });
+  }
+  return result;
+}
+
+/**
+ * Restaure une période archivée :
+ * 1. la période active courante doit être VIDE (aucune transaction) — sinon 409 ;
+ * 2. la période cible doit être archivée et appartenir au portefeuille — sinon 404/409 ;
+ * 3. les objectifs d'épargne n'ont pas dû changer depuis l'archivage — sinon 409 ;
+ * 4. la période courante (vide) est supprimée, la cible repasse active,
+ *    le portefeuille retrouve l'état exact du snapshot (solde, épargne, dates).
+ * Aucune donnée transactionnelle n'est supprimée ni perdue.
+ */
+async function restorePeriod({ walletId, userId, periodId }) {
+  return withTransaction(async (client) => {
+    const walletRes = await client.query(
+      'SELECT * FROM wallets WHERE id = $1 AND user_id = $2 FOR UPDATE',
+      [walletId, userId]
+    );
+    if (!walletRes.rows[0]) throw ApiError.notFound('Portefeuille introuvable');
+
+    const active = await client.query(
+      `SELECT * FROM periods WHERE wallet_id = $1 AND status = 'active' FOR UPDATE`,
+      [walletId]
+    );
+    const current = active.rows[0] ? toPeriod(active.rows[0]) : null;
+
+    if (current && current.id === periodId) {
+      throw ApiError.validation('Cette période est déjà active');
+    }
+    if (current) {
+      const count = await client.query(
+        'SELECT COUNT(*) AS count FROM transactions WHERE period_id = $1',
+        [current.id]
+      );
+      if (Number(count.rows[0].count) > 0) {
+        throw ApiError.conflict(
+          'RESTORE_BLOCKED',
+          'Des opérations existent sur la période en cours — fais d’abord une remise à zéro ou supprime-les'
+        );
+      }
+    }
+
+    const targetRes = await client.query(
+      `SELECT * FROM periods WHERE id = $1 AND wallet_id = $2 AND status = 'archived' FOR UPDATE`,
+      [periodId, walletId]
+    );
+    if (!targetRes.rows[0]) throw ApiError.notFound('Période archivée introuvable');
+    const target = toPeriod(targetRes.rows[0]);
+
+    const snapshot = target.snapshot || {};
+    const snapshotWallet = snapshot.wallet || null;
+    if (!snapshotWallet) {
+      throw ApiError.conflict('RESTORE_UNAVAILABLE', 'Cette période ne contient pas de sauvegarde restaurable');
+    }
+
+    const goals = await client.query(
+      'SELECT COALESCE(SUM(saved_amount), 0) AS total FROM goals WHERE wallet_id = $1',
+      [walletId]
+    );
+    const goalsNow = Number(goals.rows[0].total);
+    const goalsAtArchive = Number(snapshot.goalsSaved ?? snapshot.previousGoalsSaved ?? 0);
+    if (goalsAtArchive !== goalsNow) {
+      throw ApiError.conflict('RESTORE_BLOCKED', 'Tes objectifs ont changé depuis cette période');
+    }
+
+    if (current) {
+      await client.query('DELETE FROM periods WHERE id = $1', [current.id]);
+    }
+    const restored = await client.query(
+      `UPDATE periods SET status = 'active', snapshot = NULL, closed_at = NULL WHERE id = $1 RETURNING *`,
+      [target.id]
+    );
+    const updatedWallet = await client.query(
+      `UPDATE wallets
+       SET initial_amount = $2::bigint, balance = $3::bigint, savings_amount = $4::bigint,
+           start_date = $5, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [walletId, snapshotWallet.initialAmount, snapshotWallet.balance, snapshotWallet.savingsAmount, snapshotWallet.startDate]
+    );
+
+    return {
+      period: toPeriod(restored.rows[0]),
+      wallet: toWallet(updatedWallet.rows[0]),
+      restored: true,
+    };
+  });
+}
+
 async function undoPeriod({ walletId, userId, periodId }) {
   return withTransaction(async (client) => {
     const walletRes = await client.query(
@@ -397,4 +521,6 @@ module.exports = {
   nextPeriod,
   undoPeriod,
   resetWithArchive,
+  listPeriods,
+  restorePeriod,
 };

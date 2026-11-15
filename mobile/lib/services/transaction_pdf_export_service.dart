@@ -57,16 +57,16 @@ class TransactionPdfExportService {
     String? displayName,
   }) async {
     // Palette de marque (valeurs 0..1 pour éviter toute ambiguïté de conversion).
-    const deepGreen = pw.PdfColor(0.043, 0.365, 0.231); // #0B5D3B
-    const deepGreenDark = pw.PdfColor(0.027, 0.239, 0.149); // #074026
-    const mintSoft = pw.PdfColor(0.918, 0.965, 0.937); // #EAF6EF — fond doux
-    const rowAlt = pw.PdfColor(0.965, 0.980, 0.969); // #F6FAF7 — lignes alternées
-    const ink = pw.PdfColor(0.122, 0.141, 0.188); // #1F2430 — texte
-    const muted = pw.PdfColor(0.40, 0.43, 0.46); // #676E75 — gris texte
-    const border = pw.PdfColor(0.816, 0.843, 0.824); // #D0D7D2 — bordures
-    const incomeGreen = pw.PdfColor(0.122, 0.616, 0.388); // #1F9D63 — revenus
-    const expenseRed = pw.PdfColor(0.753, 0.224, 0.169); // #C0392B — dépenses
-    const offWhite = pw.PdfColor(0.984, 0.984, 0.973); // #FBFBF8 — fond de page
+    const deepGreen = PdfColor(0.043, 0.365, 0.231); // #0B5D3B
+    const deepGreenDark = PdfColor(0.027, 0.239, 0.149); // #074026
+    const mintSoft = PdfColor(0.918, 0.965, 0.937); // #EAF6EF — fond doux
+    const rowAlt = PdfColor(0.965, 0.980, 0.969); // #F6FAF7 — lignes alternées
+    const ink = PdfColor(0.122, 0.141, 0.188); // #1F2430 — texte
+    const muted = PdfColor(0.40, 0.43, 0.46); // #676E75 — gris texte
+    const border = PdfColor(0.816, 0.843, 0.824); // #D0D7D2 — bordures
+    const incomeGreen = PdfColor(0.122, 0.616, 0.388); // #1F9D63 — revenus
+    const expenseRed = PdfColor(0.753, 0.224, 0.169); // #C0392B — dépenses
+    const offWhite = PdfColor(0.984, 0.984, 0.973); // #FBFBF8 — fond de page
 
     final document = pw.Document();
     final expenses = transactions
@@ -86,7 +86,7 @@ class TransactionPdfExportService {
           padding: const pw.EdgeInsets.only(bottom: 8),
           child: pw.Text(
             'MYBUDGET  |  Historique des opérations',
-            style: const pw.TextStyle(color: pw.PdfColor(0.40, 0.43, 0.46), fontSize: 8),
+            style: const pw.TextStyle(color: PdfColor(0.40, 0.43, 0.46), fontSize: 8),
           ),
         ),
         footer: (context) => pw.Container(
@@ -94,7 +94,7 @@ class TransactionPdfExportService {
           padding: const pw.EdgeInsets.only(top: 8),
           child: pw.Text(
             'Page ${context.pageNumber} / ${context.pagesCount}',
-            style: const pw.TextStyle(color: pw.PdfColor(0.40, 0.43, 0.46), fontSize: 8),
+            style: const pw.TextStyle(color: PdfColor(0.40, 0.43, 0.46), fontSize: 8),
           ),
         ),
         build: (context) => [
@@ -114,13 +114,13 @@ class TransactionPdfExportService {
                   height: 46,
                   alignment: pw.Alignment.center,
                   decoration: pw.BoxDecoration(
-                    color: pw.PdfColor(1, 1, 1, 0.18),
+                    color: PdfColor(1, 1, 1, 0.18),
                     borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
                   ),
                   child: pw.Text(
                     'M',
                     style: pw.TextStyle(
-                      color: const pw.PdfColor(1, 1, 1),
+                      color: const PdfColor(1, 1, 1),
                       fontSize: 26,
                       fontWeight: pw.FontWeight.bold,
                     ),
@@ -134,7 +134,7 @@ class TransactionPdfExportService {
                       pw.Text(
                         'Historique des transactions',
                         style: pw.TextStyle(
-                          color: const pw.PdfColor(1, 1, 1),
+                          color: const PdfColor(1, 1, 1),
                           fontSize: 22,
                           fontWeight: pw.FontWeight.bold,
                         ),
@@ -143,7 +143,7 @@ class TransactionPdfExportService {
                       pw.Text(
                         'Portefeuille : $walletName',
                         style: const pw.TextStyle(
-                          color: pw.PdfColor(0.91, 0.96, 0.92),
+                          color: PdfColor(0.91, 0.96, 0.92),
                           fontSize: 11,
                         ),
                       ),
@@ -151,14 +151,14 @@ class TransactionPdfExportService {
                         pw.Text(
                           'Compte : ${displayName.trim()}',
                           style: const pw.TextStyle(
-                            color: pw.PdfColor(0.91, 0.96, 0.92),
+                            color: PdfColor(0.91, 0.96, 0.92),
                             fontSize: 9,
                           ),
                         ),
                       pw.Text(
                         'Généré le $generatedAt',
                         style: const pw.TextStyle(
-                          color: pw.PdfColor(0.75, 0.86, 0.78),
+                          color: PdfColor(0.75, 0.86, 0.78),
                           fontSize: 9,
                         ),
                       ),
@@ -218,13 +218,13 @@ class TransactionPdfExportService {
                   transaction.category,
                   transaction.description?.trim().isNotEmpty == true
                       ? transaction.description!.trim()
-                      : '—',
-                  transaction.paymentMethod ?? '—',
+                      : '-',
+                  transaction.paymentMethod ?? '-',
                   '$sign${formatXof(transaction.amount)}',
                 ];
               }).toList(),
               headerStyle: pw.TextStyle(
-                color: const pw.PdfColor(1, 1, 1),
+                color: const PdfColor(1, 1, 1),
                 fontSize: 8,
                 fontWeight: pw.FontWeight.bold,
               ),
@@ -250,7 +250,7 @@ class TransactionPdfExportService {
     return document.save();
   }
 
-  static pw.Widget _summaryCard(String label, String value, pw.PdfColor accent, pw.PdfColor ink, pw.PdfColor cardBg) => pw.Expanded(
+  static pw.Widget _summaryCard(String label, String value, PdfColor accent, PdfColor ink, PdfColor cardBg) => pw.Expanded(
         child: pw.Container(
           padding: const pw.EdgeInsets.all(10),
           decoration: pw.BoxDecoration(

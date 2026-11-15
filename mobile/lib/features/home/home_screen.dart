@@ -8,10 +8,13 @@ import '../../models/dashboard.dart';
 import '../../models/transaction.dart';
 import '../../models/wallet.dart';
 import '../../providers/shell_provider.dart';
+import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/cache_service.dart';
-import '../../widgets/transaction_tile.dart';import '../transactions/transaction_detail_sheet.dart';
+import '../../widgets/transaction_tile.dart';
+import '../reset/reset_flow.dart';
+import '../transactions/transaction_detail_sheet.dart';
 
 /// Accueil (maquette « MyBudget ») : salutation, solde, revenus/dépenses,
 /// budget du mois, actions rapides, épargne, dernières opérations.
@@ -36,7 +39,7 @@ class HomeScreen extends ConsumerWidget {
 
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final wallet = ref.read(walletControllerProvider).value;
-    if (wallet == null || ref.read(offlineProvider)) return;
+    if (wallet == null) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final path = await CacheService.instance.exportCsv(wallet.id);
@@ -51,7 +54,9 @@ class HomeScreen extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final walletState = ref.watch(walletControllerProvider);
     final dashboardState = ref.watch(dashboardControllerProvider);
-    final offline = ref.watch(offlineProvider);
+    final sync = ref.watch(syncInfoProvider);
+    final offline = sync.isOffline;
+    final pending = sync.isPending;
     final wallet = walletState.value;
 
     if (walletState.isLoading) {
@@ -66,7 +71,8 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
-          if (offline) ...[            Container(
+          if (offline || pending) ...[
+            Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppColors.warning.withValues(alpha: 0.15),
@@ -75,20 +81,30 @@ class HomeScreen extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.wifi_off_rounded, size: 18, color: Color(0xFFD97706)),
+                  Icon(
+                    offline ? Icons.wifi_off_rounded : Icons.cloud_sync_outlined,
+                    size: 18,
+                    color: const Color(0xFFD97706),
+                  ),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Hors ligne — dernières données connues',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFB45309)),
+                      offline
+                          ? 'Hors ligne — dernières données connues'
+                          : '${sync.pendingCount} opération${sync.pendingCount > 1 ? 's' : ''} en attente de synchronisation',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFB45309),
+                      ),
                     ),
                   ),
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFFB45309)),
                     onPressed: () async {
+                      await ref.read(transactionsProvider.notifier).refreshAll();
                       await ref.read(walletControllerProvider.notifier).refresh();
-                      await ref.read(dashboardControllerProvider.notifier).refresh();
                     },
                   ),
                 ],
@@ -126,7 +142,7 @@ class HomeScreen extends ConsumerWidget {
                 _QuickAction(
                   icon: Icons.ios_share_rounded,
                   label: 'Export',
-                  onTap: offline ? null : () => _export(context, ref),
+                  onTap: sync.isOffline ? null : () => _export(context, ref),
                 ),
               ],
             ),
@@ -389,14 +405,14 @@ class _Pill extends StatelessWidget {
   }
 }
 
-class _BudgetCard extends StatelessWidget {
+class _BudgetCard extends ConsumerWidget {
   const _BudgetCard({required this.dashboard, this.wallet});
 
   final DashboardData dashboard;
   final Wallet? wallet;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final savings = wallet?.savingsAmount ?? 0;
     final base = dashboard.initialAmount + dashboard.totalIncomes - savings;
@@ -444,9 +460,33 @@ class _BudgetCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Budget du mois',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.onSurface),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Budget du mois',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.onSurface),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Options',
+                      iconSize: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 32),
+                      icon: Icon(Icons.more_horiz_rounded, color: scheme.onSurfaceVariant, size: 20),
+                      onSelected: (value) async {
+                        if (value == 'reset') {
+                          await showResetAllFlow(context, ref);
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'reset',
+                          child: Text('Réinitialiser tout à 0'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -578,7 +618,7 @@ class _SavingsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Disponible : ${formatXof(wallet.available)}',
+                    'Reste à dépenser : ${formatXof(wallet.available)}',
                     style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant),
                   ),
                 ],

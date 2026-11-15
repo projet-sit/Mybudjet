@@ -72,6 +72,26 @@ class AuthRepository {
     return session;
   }
 
+  /// Renouvelle la session via le refresh token (jeton d'accès expiré) :
+  /// nouveaux jetons puis /auth/me pour recharger le profil.
+  Future<AuthSession> refresh(String refreshToken) async {
+    final response = await _dio.post('/auth/refresh', data: {
+      'refreshToken': refreshToken,
+    });
+    final tokens = response.data['data']['tokens'] as Map<String, dynamic>;
+    final accessToken = tokens['accessToken'] as String;
+    final newRefreshToken = (tokens['refreshToken'] ?? refreshToken) as String;
+    ApiClient.instance.setAccessToken(accessToken);
+    final user = await me();
+    final session = AuthSession(
+      user: user,
+      accessToken: accessToken,
+      refreshToken: newRefreshToken,
+    );
+    await _storage.saveSession(session);
+    return session;
+  }
+
   /// Persiste la session courante (token + stockage).
   Future<AuthSession> persistSession(AuthSession session) async {
     ApiClient.instance.setAccessToken(session.accessToken);

@@ -1,6 +1,7 @@
 const walletService = require('./walletService');
 const statsRepository = require('../repositories/statsRepository');
 const periodRepository = require('../repositories/periodRepository');
+const { localMonthStartIso, localYearStartIso, localDaysAgoIso, todayIso } = require('../utils/dates');
 
 /** Phase 6 — tableau de bord. */
 async function dashboard(uid, walletId) {
@@ -41,14 +42,16 @@ async function stats(uid, walletId, query = {}) {
   const wallet = await walletService.getWallet(uid, walletId);
   const period = ['day', 'week', 'month', 'year', 'all'].includes(query.period) ? query.period : 'month';
 
-  const now = new Date();
+  // Frontières de période à minuit heure locale (Bénin), pas en UTC.
+  // Les statistiques lisent TOUTES les périodes, y compris les archivées
+  // (les périodes archivées conservent leurs transactions).
   const iso = (d) => d.toISOString().slice(0, 10);
+  const dateTo = todayIso();
   let dateFrom;
-  let dateTo = iso(now);
   if (period === 'day') dateFrom = dateTo;
-  else if (period === 'week') dateFrom = iso(new Date(now.getTime() - 6 * 86400000));
-  else if (period === 'month') dateFrom = iso(new Date(now.getFullYear(), now.getMonth(), 1));
-  else if (period === 'year') dateFrom = iso(new Date(now.getFullYear(), 0, 1));
+  else if (period === 'week') dateFrom = localDaysAgoIso(6);
+  else if (period === 'month') dateFrom = localMonthStartIso();
+  else if (period === 'year') dateFrom = localYearStartIso();
   else dateFrom = '1970-01-01';
 
   const days = ['day', 'week'].includes(period) ? 7 : period === 'month' ? 30 : 365;
@@ -59,9 +62,20 @@ async function stats(uid, walletId, query = {}) {
     statsRepository.byCategory(wallet.id, { dateFrom, dateTo, type: 'expense' }),
     statsRepository.totalsBetween(wallet.id, dateFrom, dateTo),
     (() => {
+      if (period === 'month') {
+        // Mois civil précédent complet.
+        const [year, month] = dateFrom.split('-').map(Number);
+        const prev = new Date(Date.UTC(year, month - 2, 1));
+        const prevFrom = iso(prev);
+        const prevEnd = new Date(Date.UTC(year, month - 1, 0));
+        return statsRepository.totalsBetween(wallet.id, prevFrom, iso(prevEnd));
+      }
+      if (period === 'year') {
+        const year = Number(dateFrom.slice(0, 4));
+        return statsRepository.totalsBetween(wallet.id, `${year - 1}-01-01`, `${year - 1}-12-31`);
+      }
       const from = new Date(dateFrom);
-      const to = new Date(dateTo);
-      const span = Math.max(1, Math.round((to - from) / 86400000) + 1);
+      const span = Math.max(1, Math.round((new Date(dateTo) - from) / 86400000) + 1);
       const prevFrom = iso(new Date(from.getTime() - span * 86400000));
       const prevTo = iso(new Date(from.getTime() - 86400000));
       return statsRepository.totalsBetween(wallet.id, prevFrom, prevTo);

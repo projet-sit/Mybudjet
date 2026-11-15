@@ -27,6 +27,21 @@ class DashboardData {
   final List<DailyPoint> weeklySeries;
   final List<Transaction> latestTransactions;
 
+  /// Copie avec la liste des dernières opérations remplacée (overlay local).
+  DashboardData withLatest(List<Transaction> latest) => DashboardData(
+        walletId: walletId,
+        walletName: walletName,
+        currency: currency,
+        initialAmount: initialAmount,
+        balance: balance,
+        totalExpenses: totalExpenses,
+        totalIncomes: totalIncomes,
+        transactionsCount: transactionsCount,
+        percentUsed: percentUsed,
+        weeklySeries: weeklySeries,
+        latestTransactions: latest,
+      );
+
   factory DashboardData.fromJson(Map<String, dynamic> json) {
     final wallet = json['wallet'] as Map<String, dynamic>;
     final totals = json['totals'] as Map<String, dynamic>;
@@ -64,8 +79,9 @@ class DailyPoint {
   final int expenses;
 
   factory DailyPoint.fromJson(Map<String, dynamic> json) {
+    final raw = (json['date'] ?? '') as String;
     return DailyPoint(
-      date: json['date'] as String,
+      date: raw.trim().length >= 10 ? raw.trim().substring(0, 10) : raw.trim(),
       expenses: Transaction.asInt(json['expenses']),
     );
   }
@@ -157,6 +173,16 @@ class Budget {
   final int alertLevel; // 0 | 50 | 80 | 100
 
   int get remaining => (limitAmount - spent).clamp(0, limitAmount);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'walletId': walletId,
+        'category': category,
+        'limitAmount': limitAmount,
+        'spent': spent,
+        'percent': percent,
+        'alertLevel': alertLevel,
+      };
 
   factory Budget.fromJson(Map<String, dynamic> json) {
     return Budget(

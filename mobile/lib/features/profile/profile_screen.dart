@@ -7,11 +7,10 @@ import '../../core/utils/money.dart';
 import '../../providers/app_prefs_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../providers/transaction_provider.dart';
 import '../../services/cache_service.dart';
-import '../../services/sync_queue.dart';
+import '../../services/outbox.dart';
 import '../../services/transaction_pdf_export_service.dart';
-import '../../services/wallet_repository.dart';
+import '../reset/reset_flow.dart';
 /// Profil (maquette « MyBudget ») : compte, portefeuille, préférences,
 /// export PDF, déconnexion.
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -47,49 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _resetAll() async {
-    final wallet = ref.read(walletControllerProvider).value;
-    if (wallet == null || !mounted) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Repartir à zéro ?'),
-        content: const Text('Cela effacera toutes vos transactions, budgets et objectifs. Cette action est définitive.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(dialogContext).colorScheme.error),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Tout effacer'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    try {
-      await WalletRepository.instance.reset(wallet.id);
-      ref.invalidate(walletControllerProvider);
-      ref.invalidate(transactionsProvider);
-      ref.invalidate(budgetsControllerProvider);
-      ref.invalidate(statsControllerProvider);
-      ref.invalidate(dashboardControllerProvider);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Portefeuille remis à zéro')),
-        );
-        context.go('/home');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(WalletController.messageFrom(e))),
-        );
-      }
-    }
-  }
+  Future<void> _resetAll() => showResetAllFlow(context, ref);
 
   @override
   Widget build(BuildContext context) {
@@ -291,7 +248,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 22),
-          _sectionLabel(context, 'Compte'),
+          _sectionLabel(context, 'Réinitialisation'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -301,8 +258,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             onPressed: _resetAll,
             icon: const Icon(Icons.restart_alt, size: 18),
-            label: const Text('Repartir à zéro'),
+            label: const Text('Réinitialiser tout à 0'),
           ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'La période en cours sera archivée (historique conservé). Ton épargne est conservée par défaut.',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: 18),
+          _sectionLabel(context, 'Compte'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -345,7 +312,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             onPressed: _deleteAccount,
             icon: const Icon(Icons.delete_forever, size: 18),
-            label: const Text('Supprimer mon compte et mes données'),
+            label: const Text('Supprimer mes données'),
           ),
           const SizedBox(height: 8),
         ],
@@ -354,7 +321,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _deleteAccount() async {
-    final pending = await SyncQueue.instance.count();
+    final pending = await Outbox.instance.count();
     if (!mounted) return;
     if (pending > 0) {      final proceed = await showDialog<bool>(
         context: context,
@@ -391,9 +358,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) return;    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Supprimer mon compte ?'),
+        title: const Text('Supprimer définitivement ?'),
         content: const Text(
-          'Cette action est définitive. Vos données seront supprimées.',
+          'TOUTES tes données seront effacées (compte, portefeuille, opérations, budgets, épargne). '
+          'Cette action est définitive et ne peut pas être annulée.',
         ),
         actions: [
           TextButton(
@@ -401,14 +369,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: const Text('Annuler'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Supprimer'),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(dialogContext).colorScheme.error),            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Supprimer définitivement'),
           ),
         ],
       ),
     );
     if (confirmed == true) {
       await ref.read(authControllerProvider.notifier).deleteAccount();
+      if (mounted) context.go('/login');
     }
   }
   Widget _sectionLabel(BuildContext context, String label) {

@@ -27,4 +27,13 @@ class PeriodRepository {
     final response = await _dio.post('/wallets/$walletId/period/$periodId/undo');
     return PeriodTransition.fromJson(response.data['data'] as Map<String, dynamic>);
   }
+
+  /// Remise à zéro : archive la période en cours (historique conservé) et en
+  /// ouvre une nouvelle. L'épargne est conservée sauf `includeSavings`.
+  Future<PeriodTransition> reset(String walletId, {required bool includeSavings}) async {
+    final response = await _dio.post('/wallets/$walletId/reset', data: {
+      'includeSavings': includeSavings,
+    });
+    return PeriodTransition.fromJson(response.data['data'] as Map<String, dynamic>);
+  }
 }

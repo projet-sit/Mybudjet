@@ -7,10 +7,10 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
 import '../../models/categories.dart';
 import '../../models/transaction.dart';
+import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../services/cache_service.dart';
-import '../../services/data_repository.dart';
+import '../../services/outbox.dart';
 
 /// Saisie rapide (maquette) : Dépense/Revenu, montant, catégories, pavé numérique.
 /// Sert aussi à modifier une opération existante.
@@ -76,10 +76,6 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
       _snack('Entre un montant');
       return;
     }
-    if (ref.read(offlineProvider)) {
-      _snack('Connexion Internet requise pour enregistrer.');
-      return;
-    }
     final wallet = ref.read(walletControllerProvider).value;
     if (wallet == null) {
       _snack("Aucun portefeuille — crée-le d'abord");
@@ -100,17 +96,31 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         time: widget.editing?.time ?? DateFormat('HH:mm').format(DateTime.now()),
         paymentMethod: _mode == 'expense' ? (widget.editing?.paymentMethod ?? 'Espèces') : null,
       );
+      WriteResult result;
       if (widget.editing == null) {
-        await TransactionRepository.instance.create(wallet.id, tx);
+        result = await Outbox.instance.createTransaction(wallet.id, tx);
       } else {
-        await TransactionRepository.instance.update(wallet.id, tx.id, tx);
+        result = await Outbox.instance.updateTransaction(wallet.id, tx);
       }
-      await ref.read(transactionsProvider.notifier).refreshAll();
+      if (!result.queued) {
+        await ref.read(transactionsProvider.notifier).refreshAll();
+      } else {
+        ref.invalidate(dashboardControllerProvider);
+        ref.invalidate(walletControllerProvider);
+        ref.invalidate(transactionsProvider);
+        await ref.read(syncInfoProvider.notifier).refresh();
+      }
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       Navigator.of(context).pop();
       messenger.showSnackBar(
-        SnackBar(content: Text(widget.editing == null ? 'Opération enregistrée' : 'Opération modifiée')),
+        SnackBar(
+          content: Text(
+            result.queued
+                ? 'Enregistrée hors-ligne — synchronisation dès le retour du réseau'
+                : (widget.editing == null ? 'Opération enregistrée' : 'Opération modifiée'),
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;

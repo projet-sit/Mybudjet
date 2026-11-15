@@ -45,11 +45,25 @@ class WalletRepository {
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
   }
 
-  /// Fixe le montant mis de côté (réserve dans le même compte).
-  Future<Wallet> setSavings(String walletId, int amount) async {
-    final response = await _dio.patch('/wallets/$walletId/savings', data: {
+  /// Verse un montant à l'épargne (atomique, refusé si > Reste).
+  Future<Wallet> savingsDeposit(String walletId, int amount) async {
+    final response = await _dio.post('/wallets/$walletId/savings/deposit', data: {
       'amount': amount,
     });
+    return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
+  }
+
+  /// Retire un montant de l'épargne (atomique, refusé si > épargne).
+  Future<Wallet> savingsWithdraw(String walletId, int amount) async {
+    final response = await _dio.post('/wallets/$walletId/savings/withdraw', data: {
+      'amount': amount,
+    });
+    return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
+  }
+
+  /// « Tout récupérer » : toute l'épargne retourne dans le Reste, atomique.
+  Future<Wallet> savingsWithdrawAll(String walletId) async {
+    final response = await _dio.post('/wallets/$walletId/savings/withdraw-all');
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
   }
 
@@ -57,13 +71,6 @@ class WalletRepository {
     final response = await _dio.patch('/wallets/$walletId/initial-amount', data: {
       'initialAmount': newAmount,
     });
-    return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
-  }
-
-  /// Repart à zéro : efface transactions, budgets, objectifs, périodes et
-  /// historique, remet le portefeuille à 0 et recrée une période active.
-  Future<Wallet> reset(String walletId) async {
-    final response = await _dio.post('/wallets/$walletId/reset');
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
   }
 }

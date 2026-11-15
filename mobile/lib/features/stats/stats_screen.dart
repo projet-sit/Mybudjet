@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/date_format.dart';
 import '../../core/utils/money.dart';
 import '../../models/dashboard.dart';
 import '../../providers/transaction_provider.dart';
@@ -269,7 +270,7 @@ class StatsScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            'Disponible',
+                            'Reste à dépenser',
                             style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant),
                           ),
                           Text(
@@ -304,7 +305,8 @@ class StatsScreen extends ConsumerWidget {
       final chunk = points.sublist(i, end);
       final total = chunk.fold<int>(0, (sum, p) => sum + p.expenses);
       final date = chunk.first.date;
-      final label = date.length >= 10 ? '${date.substring(8, 10)}/${date.substring(5, 7)}' : date;
+      final parsed = DateTime.tryParse(date);
+      final label = parsed != null ? DateFormatUtil.formatDayMonth(parsed.toLocal()) : date;
       result.add((label: label, value: total));
     }
     return result;

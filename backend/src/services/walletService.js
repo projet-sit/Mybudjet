@@ -1,6 +1,7 @@
 const ApiError = require('../utils/ApiError');
 const { isValidAmount } = require('../utils/money');
 const walletRepository = require('../repositories/walletRepository');
+const periodRepository = require('../repositories/periodRepository');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NAME_MAX = 100;
@@ -36,16 +37,6 @@ function validateStartDate(value) {
     });
   }
   return value;
-}
-
-function validateSavings(value) {
-  const amount = Number(value);
-  if (!Number.isInteger(amount) || amount < 0) {
-    throw ApiError.validation('L’épargne doit être un entier positif (FCFA)', {
-      field: 'amount',
-    });
-  }
-  return amount;
 }
 
 function validateCurrency(value) {
@@ -90,20 +81,11 @@ async function getHistory(uid, walletId) {
   return walletRepository.getInitialAmountHistory(wallet.id);
 }
 
-async function setSavings(uid, walletId, body) {
-  const wallet = await getWallet(uid, walletId);
-  const amount = validateSavings(body.amount);
-  if (amount > wallet.balance) {
-    throw ApiError.validation('L’épargne ne peut pas dépasser le solde disponible', {
-      field: 'amount',
-    });
-  }
-  return walletRepository.setSavings(wallet.id, amount);
-}
-
-async function resetWallet(uid, walletId) {
+async function resetWallet(uid, walletId, body = {}) {
   const wallet = await getWallet(uid, walletId); // vérifie propriété
-  return walletRepository.reset(wallet.id);
+  const includeSavings = body.includeSavings === true;
+  // Archive d'abord (la période part dans l'historique), annulation possible 10 s.
+  return periodRepository.resetWithArchive({ walletId: wallet.id, userId: uid, includeSavings });
 }
 
 module.exports = {
@@ -112,6 +94,5 @@ module.exports = {
   getWallet,
   updateInitialAmount,
   getHistory,
-  setSavings,
   resetWallet,
 };

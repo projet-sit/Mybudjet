@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/date_format.dart';
 import '../../core/utils/money.dart';
 import '../../models/transaction.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/data_repository.dart';
+import '../../widgets/transaction_tile.dart';
 import 'quick_add_sheet.dart';
 
 /// Détail d'une opération (maquette) : montant, infos, Modifier / Supprimer.
@@ -64,9 +66,10 @@ class TransactionDetailSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isExpense = transaction.isExpense;
-    final title = (transaction.description?.trim().isNotEmpty ?? false)
-        ? transaction.description!.trim()
-        : transaction.category;
+    final isSavings = transaction.isSavings;
+    final title = transactionTitle(transaction);
+    final sign = isSavings ? '' : (isExpense ? '−' : '+');
+    final accent = isExpense ? scheme.error : (isSavings ? savingsNeutral : AppColors.incomeGreen);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -83,8 +86,8 @@ class TransactionDetailSheet extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Icon(
-                isExpense ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                color: isExpense ? scheme.error : AppColors.incomeGreen,
+                categoryIcon(transaction.category, isExpense),
+                color: accent,
                 size: 28,
               ),
             ),
@@ -92,12 +95,12 @@ class TransactionDetailSheet extends ConsumerWidget {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              '${isExpense ? '−' : '+'}${formatXof(transaction.amount)}',
+              '$sign${formatXof(transaction.amount)}',
               style: TextStyle(
                 fontSize: 30,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
-                color: isExpense ? scheme.error : AppColors.incomeGreen,
+                color: accent,
               ),
             ),
           ),
@@ -119,13 +122,13 @@ class TransactionDetailSheet extends ConsumerWidget {
             ),
             child: Column(
               children: [
-                _row(context, 'Type', isExpense ? 'Dépense' : 'Revenu'),
+                _row(context, 'Type', isSavings ? 'Épargne' : (isExpense ? 'Dépense' : 'Revenu')),
                 Divider(color: scheme.outline),
                 _row(context, 'Catégorie', transaction.category),
                 Divider(color: scheme.outline),
                 _row(context, 'Date', formatDateFr(transaction.date)),
                 Divider(color: scheme.outline),
-                _row(context, 'Heure', transaction.time),
+                _row(context, 'Heure', DateFormatUtil.formatTime(transaction.time)),
                 if (transaction.paymentMethod != null) ...[
                   Divider(color: scheme.outline),
                   _row(context, 'Paiement', transaction.paymentMethod!),
@@ -136,14 +139,16 @@ class TransactionDetailSheet extends ConsumerWidget {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _edit(context),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Modifier'),
+              if (!isSavings) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _edit(context),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Modifier'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: scheme.error),

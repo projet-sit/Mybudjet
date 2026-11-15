@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,9 @@ import '../models/dashboard.dart';
 import '../models/transaction.dart';
 import '../services/cache_service.dart';
 import '../services/data_repository.dart';
+import '../services/outbox.dart';
+import '../core/search/transaction_search.dart';
+import '../providers/sync_provider.dart';
 import 'wallet_provider.dart';
 
 /// État de la liste paginée + filtres (Phase 7).
@@ -30,12 +34,14 @@ class TransactionsState {
   final int totalIncomes;
   final int page;
   final int pages;
-  final String typeFilter; // all | expense | income
+  final String typeFilter; // all | expense | income | savings
   final String? categoryFilter;
   final String? search;
   final bool isLoadingMore;
 
   bool get hasMore => page < pages;
+
+  /// Nombre d'opérations réellement affichable après overlay (information pour l'UI).
 
   TransactionsState copyWith({
     List<Transaction>? items,
@@ -81,16 +87,85 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
     if (wallet == null) {
       return const TransactionsState();
     }
-    final page = await TransactionRepository.instance.list(wallet.id, query: _query(wallet.id, const TransactionsState(), firstPage: true));
+    // Rejoue d'abord ce qui était en attente (backend à nouveau disponible).
+    unawaited(_flushOutboxQuietly());
+    final online = await _isOnline();
+    if (!online) {
+      // Pas de réseau : repli direct sur le cache, sans spinner ni requête.
+      return _fromCacheAndOverlay(wallet.id);
+    }
+    try {
+      final page = await TransactionRepository.instance.list(
+        wallet.id,
+        query: _query(wallet.id, const TransactionsState(), firstPage: true),
+      );
+      unawaited(_refreshFullCache(wallet.id));
+      final merged = await Outbox.instance.applyOverlay(page.transactions);
+      return TransactionsState(
+        items: merged,
+        total: merged.length,
+        totalExpenses: page.totalExpenses,
+        totalIncomes: page.totalIncomes,
+        page: page.page,
+        pages: page.pages,
+        typeFilter: 'all',
+      );
+    } catch (e) {
+      // Backend injoignable : repli sur le cache local complet (jamais bloquant).
+      try {
+        return await _fromCacheAndOverlay(wallet.id);
+      } catch (_) {
+        rethrow;
+      }
+    }
+  }
+
+  Future<TransactionsState> _fromCacheAndOverlay(String walletId) async {
+    final cached = await CacheService.instance.loadTransactions(walletId);
+    final merged = await Outbox.instance.applyOverlay(cached);
+    if (merged.isEmpty && cached.isEmpty) {
+      throw StateError('Synchronisation indisponible et aucune donnée enregistrée');
+    }
     return TransactionsState(
-      items: page.transactions,
-      total: page.total,
-      totalExpenses: page.totalExpenses,
-      totalIncomes: page.totalIncomes,
-      page: page.page,
-      pages: page.pages,
-      typeFilter: const TransactionsState().typeFilter,
+      items: merged,
+      total: merged.length,
+      totalExpenses: 0,
+      totalIncomes: 0,
+      page: 1,
+      pages: 1,
+      typeFilter: 'all',
     );
+  }
+
+  Future<bool> _isOnline() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.any((r) => r != ConnectivityResult.none);
+    } catch (_) {
+      // En cas de doute, on tente le réseau : un timeout backend n'est pas « hors ligne ».
+      return true;
+    }
+  }
+
+  Future<void> _flushOutboxQuietly() async {
+    try {
+      final replayed = await Outbox.instance.flush();
+      if (replayed > 0) {
+        await ref.read(syncInfoProvider.notifier).refresh();
+      }
+    } catch (_) {
+      // Laisse la place à un autre passage (réseau, prochain resume…).
+    }
+  }
+
+  Future<void> _refreshFullCache(String walletId) async {
+    try {
+      // fetchAll sauvegarde déjà le cache complet (fusionné avec l'overlay).
+      await TransactionRepository.instance.fetchAll(walletId);
+      await Outbox.instance.clearOverlayIfAllSynced();
+    } catch (_) {
+      // Cache complet non rafraîchi : on garde le dernier connu.
+    }
   }
 
   Future<void> refresh() async {
@@ -104,11 +179,13 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
     if (wallet == null || previous == null) return;
     try {
       state = const AsyncLoading();
-      final q = _query(wallet.id, previous.copyWith(typeFilter: type), firstPage: true);
+      final base = previous.copyWith(typeFilter: type);
+      final q = _query(wallet.id, base, firstPage: true);
       final page = await TransactionRepository.instance.list(wallet.id, query: q);
-      state = AsyncData(previous.copyWith(
-        items: page.transactions,
-        total: page.total,
+      final merged = await Outbox.instance.applyOverlay(page.transactions);
+      state = AsyncData(base.copyWith(
+        items: merged,
+        total: merged.length,
         totalExpenses: page.totalExpenses,
         totalIncomes: page.totalIncomes,
         page: page.page,
@@ -116,30 +193,55 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
         typeFilter: type,
       ));
     } catch (e, st) {
-      state = AsyncError(e, st);
+      // Repli local : filtre côté client sur le cache complet.
+      final fallback = await _localFiltered(wallet.id, previous, typeFilter: type);
+      if (fallback != null) {
+        state = AsyncData(fallback);
+      } else {
+        state = AsyncError(e, st);
+      }
     }
+  }
+
+  Future<TransactionsState?> _localFiltered(
+    String walletId,
+    TransactionsState previous, {
+    String? typeFilter,
+  }) async {
+    final cached = await CacheService.instance.loadTransactions(walletId);
+    var merged = await Outbox.instance.applyOverlay(cached);
+    final filter = typeFilter ?? previous.typeFilter;
+    if (filter == 'expense') merged = merged.where((t) => t.isExpense).toList();
+    if (filter == 'income') merged = merged.where((t) => t.isIncome).toList();
+    if (filter == 'savings') merged = merged.where((t) => t.isSavings).toList();
+    return previous.copyWith(
+      items: merged,
+      total: merged.length,
+      page: 1,
+      pages: 1,
+      typeFilter: filter,
+    );
   }
 
   Future<void> setSearch(String? search) async {
     final wallet = ref.watch(walletControllerProvider).value;
     final previous = state.value;
     if (wallet == null || previous == null) return;
-    try {
-      state = const AsyncLoading();
-      final base = previous.copyWith(clearSearch: true, search: search);
-      final q = _query(wallet.id, base, firstPage: true);
-      final page = await TransactionRepository.instance.list(wallet.id, query: q);
-      state = AsyncData(base.copyWith(
-        items: page.transactions,
-        total: page.total,
-        totalExpenses: page.totalExpenses,
-        totalIncomes: page.totalIncomes,
-        page: page.page,
-        pages: page.pages,
-      ));
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
+    final q = (search ?? '').trim();
+    state = const AsyncLoading();
+    final base = previous.copyWith(clearSearch: true, search: search);
+    final cached = await CacheService.instance.loadTransactions(wallet.id);
+    final mergedAll = await Outbox.instance.applyOverlay(cached);
+    // Recherche dans tout l'historique local (instantanée, fonctionne hors-ligne).
+    final filtered = q.isEmpty
+        ? mergedAll
+        : searchTransactions(mergedAll, q, typeFilter: base.typeFilter, walletName: wallet.name);
+    state = AsyncData(base.copyWith(
+      items: filtered,
+      total: filtered.length,
+      page: 1,
+      pages: 1,
+    ));
   }
 
   Future<void> loadMore() async {
@@ -151,33 +253,41 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
       final q = _query(wallet.id, s, firstPage: false);
       q['page'] = '${s.page + 1}';
       final page = await TransactionRepository.instance.list(wallet.id, query: q);
+      final merged = await Outbox.instance.applyOverlay(page.transactions);
+      // Les opérations pending n'apparaissent qu'en première page : on déduplique.
+      final existingIds = s.items.map((t) => t.id).toSet();
+      final fresh = merged.where((t) => !existingIds.contains(t.id)).toList();
       state = AsyncData(s.copyWith(
-        items: [...s.items, ...page.transactions],
+        items: [...s.items, ...fresh],
         page: page.page,
         isLoadingMore: false,
       ));
-    } catch (e, st) {
-      state = AsyncError(e, st);
+    } catch (_) {
+      state = AsyncData(s.copyWith(isLoadingMore: false));
     }
   }
 
-  /// Après création/modification/suppression : rafraîchit liste + solde + dashboard,
-  /// et attend réellement les rechargements pour que l'accueil affiche les chiffres à jour.
+  /// Après création/modification/suppression : rejoue la file puis rafraîchit
+  /// liste + solde + dashboard, et attend réellement les rechargements.
+  /// Se termine toujours (jamais de chargement infini).
   Future<void> refreshAll() async {
+    await Outbox.instance.flush();
     ref.invalidate(dashboardControllerProvider);
     ref.invalidate(walletControllerProvider);
     ref.invalidate(budgetsControllerProvider);
+    ref.invalidate(statsControllerProvider);
     try {
-      await ref.read(dashboardControllerProvider.future);
+      await ref.read(dashboardControllerProvider.future).timeout(const Duration(seconds: 30));
     } catch (_) {
       // Le repli cache du dashboard gère déjà l'erreur.
     }
     try {
-      await ref.read(walletControllerProvider.future);
+      await ref.read(walletControllerProvider.future).timeout(const Duration(seconds: 30));
     } catch (_) {
-      // Idem : le contrôleur porte déjà son état d'erreur.
+      // Idem : le contrôleur porte déjà son état de repli.
     }
     await refresh();
+    await ref.read(syncInfoProvider.notifier).refresh();
   }
 
   static String messageFrom(Object error) {
@@ -187,7 +297,7 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
         final err = data['error'] as Map<String, dynamic>;
         if (err['message'] is String) return err['message'] as String;
       }
-      return 'Erreur réseau — vérifie ta connexion';
+      return 'Synchronisation indisponible — réessayez';
     }
     return 'Une erreur est survenue';
   }
@@ -203,19 +313,20 @@ class DashboardController extends AsyncNotifier<DashboardData?> {
   Future<DashboardData?> build() async {
     final wallet = await ref.watch(walletControllerProvider.future);
     if (wallet == null) return null;
+    await Outbox.instance.flush();
     final cachedRaw = await CacheService.instance.loadDashboard(wallet.id);
     if (cachedRaw != null) {
       // Cache affiché immédiatement ; revalidation en arrière-plan.
       unawaited(_refreshFromNetwork(wallet.id, cachedRaw));
-      return _fromCache(wallet.id, cachedRaw);
+      final fromCache = _fromCache(wallet.id, cachedRaw);
+      return fromCache.withLatest(await Outbox.instance.applyOverlay(fromCache.latestTransactions));
     }
     try {
       final data = await DataRepository.instance.dashboard(wallet.id);
       await CacheService.instance.saveDashboard(wallet.id, data);
-      ref.read(offlineProvider.notifier).set(false);
       return data;
     } catch (_) {
-      // Aucun cache et réseau impossible : l'écran affiche l'erreur + réessayer.
+      // Aucun cache et backend injoignable : l'écran affiche l'erreur + réessayer.
       rethrow;
     }
   }
@@ -224,11 +335,10 @@ class DashboardController extends AsyncNotifier<DashboardData?> {
     try {
       final data = await DataRepository.instance.dashboard(walletId);
       await CacheService.instance.saveDashboard(walletId, data);
-      ref.read(offlineProvider.notifier).set(false);
       state = AsyncData(data);
     } catch (_) {
-      // Hors ligne : le cache déjà affiché reste la donnée de référence.
-      ref.read(offlineProvider.notifier).set(true);
+      // Backend injoignable : le cache déjà affiché reste la donnée de référence.
+      state = AsyncData(_fromCache(walletId, cachedRaw));
     }
   }
 
@@ -260,20 +370,17 @@ class DashboardController extends AsyncNotifier<DashboardData?> {
 
   Future<void> refresh() async {
     // Pas d'AsyncLoading : les données en cache restent affichées pendant la
-    // revalidation (hors-ligne = repli cache instantané).
+    // revalidation (repli cache instantané). Se termine toujours.
     final wallet = ref.read(walletControllerProvider).value;
     state = await AsyncValue.guard(() async {
       if (wallet == null) {
-        // Pas encore de portefeuille chargé : repasse par le build habituel.
         return build();
       }
       try {
         final data = await DataRepository.instance.dashboard(wallet.id);
         await CacheService.instance.saveDashboard(wallet.id, data);
-        ref.read(offlineProvider.notifier).set(false);
         return data;
       } catch (_) {
-        ref.read(offlineProvider.notifier).set(true);
         final raw = await CacheService.instance.loadDashboard(wallet.id);
         if (raw != null) return _fromCache(wallet.id, raw);
         rethrow;
@@ -306,39 +413,153 @@ class StatsController extends AsyncNotifier<StatsData?> {
 final statsControllerProvider =
     AsyncNotifierProvider<StatsController, StatsData?>(StatsController.new);
 
-/// Phase 9 — budgets.
+/// Phase 9 — budgets (cache local + file d'attente pour un usage hors-ligne).
 class BudgetsController extends AsyncNotifier<List<Budget>> {
   @override
   Future<List<Budget>> build() async {
     final wallet = await ref.watch(walletControllerProvider.future);
     if (wallet == null) return const [];
-    return DataRepository.instance.budgets(wallet.id);
+    try {
+      final budgets = await DataRepository.instance.budgets(wallet.id);
+      await CacheService.instance.saveBudgets(
+        wallet.id,
+        budgets.map((b) => b.toJson()).toList(),
+      );
+      return Outbox.instance.applyBudgetOverlay(budgets);
+    } on DioException catch (_) {
+      final cached = await CacheService.instance.loadBudgets(wallet.id);
+      final merged = await Outbox.instance.applyBudgetOverlay(cached);
+      if (merged.isNotEmpty || cached.isNotEmpty) return merged;
+      rethrow;
+    }
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    await Outbox.instance.flush();
+    final wallet = ref.read(walletControllerProvider).value;
+    // Pas de spinner plein écran si un cache existe (repli instantané).
+    final hasCache = wallet != null &&
+        (await CacheService.instance.loadBudgets(wallet.id)).isNotEmpty;
+    if (!hasCache) {
+      state = const AsyncLoading();
+    }
     state = await AsyncValue.guard(() => build());
+  }
+
+  Future<void> _saveCache(String walletId, List<Budget> budgets) async {
+    await CacheService.instance.saveBudgets(
+      walletId,
+      budgets.map((b) => b.toJson()).toList(),
+    );
   }
 
   Future<void> create({required String category, required int limitAmount}) async {
     final wallet = ref.watch(walletControllerProvider).value;
     if (wallet == null) return;
-    await DataRepository.instance.createBudget(wallet.id, category: category, limitAmount: limitAmount);
+    try {
+      await DataRepository.instance.createBudget(wallet.id, category: category, limitAmount: limitAmount);
+    } on DioException catch (e) {
+      if (!_isNetworkish(e)) rethrow;
+      final localId = Outbox.instance.newLocalId();
+      final cached = await CacheService.instance.loadBudgets(wallet.id);
+      await _saveCache(wallet.id, [
+        ...cached,
+        Budget(id: localId, walletId: wallet.id, category: category, limitAmount: limitAmount),
+      ]);
+      await Outbox.instance.enqueue(OutboxOp(
+        id: localId,
+        kind: OutboxKind.budgetUpsert,
+        walletId: wallet.id,
+        payload: {'id': localId, 'category': category, 'limitAmount': limitAmount},
+        createdAt: DateTime.now(),
+      ));
+      await ref.read(syncInfoProvider.notifier).refresh();
+    }
     await refresh();
   }
 
   Future<void> updateLimit(String budgetId, int limitAmount) async {
     final wallet = ref.watch(walletControllerProvider).value;
     if (wallet == null) return;
-    await DataRepository.instance.updateBudget(wallet.id, budgetId, limitAmount: limitAmount);
+    if (Outbox.instance.isLocalId(budgetId)) {
+      // Budget pas encore synchronisé : patcher le cache + l'opération en attente.
+      final cached = await CacheService.instance.loadBudgets(wallet.id);
+      final patched = cached
+          .map((b) => b.id == budgetId
+              ? Budget(
+                  id: b.id,
+                  walletId: b.walletId,
+                  category: b.category,
+                  limitAmount: limitAmount,
+                )
+              : b)
+          .toList();
+      await _saveCache(wallet.id, patched);
+      await Outbox.instance.updatePendingUpsertAmount(budgetId, limitAmount);
+      return refresh();
+    }
+    try {
+      await DataRepository.instance.updateBudget(wallet.id, budgetId, limitAmount: limitAmount);
+    } on DioException catch (e) {
+      if (!_isNetworkish(e)) rethrow;
+      final cached = await CacheService.instance.loadBudgets(wallet.id);
+      final patched = cached
+          .map((b) => b.id == budgetId
+              ? Budget(
+                  id: b.id,
+                  walletId: b.walletId,
+                  category: b.category,
+                  limitAmount: limitAmount,
+                  spent: b.spent,
+                  percent: limitAmount > 0 ? ((b.spent / limitAmount) * 100).round() : 0,
+                  alertLevel: b.alertLevel,
+                )
+              : b)
+          .toList();
+      await _saveCache(wallet.id, patched);
+      await Outbox.instance.enqueue(OutboxOp(
+        id: budgetId,
+        kind: OutboxKind.budgetUpsert,
+        walletId: wallet.id,
+        payload: {'id': budgetId, 'limitAmount': limitAmount},
+        createdAt: DateTime.now(),
+      ));
+      await ref.read(syncInfoProvider.notifier).refresh();
+    }
     await refresh();
   }
 
   Future<void> remove(String budgetId) async {
     final wallet = ref.watch(walletControllerProvider).value;
     if (wallet == null) return;
-    await DataRepository.instance.deleteBudget(wallet.id, budgetId);
+    final cached = await CacheService.instance.loadBudgets(wallet.id);
+    if (Outbox.instance.isLocalId(budgetId)) {
+      // Jamais synchronisé : retirer la création de la file + du cache.
+      await Outbox.instance.removePendingOp(budgetId);
+      await _saveCache(wallet.id, cached.where((b) => b.id != budgetId).toList());
+      return refresh();
+    }
+    try {
+      await DataRepository.instance.deleteBudget(wallet.id, budgetId);
+    } on DioException catch (e) {
+      if (!_isNetworkish(e)) rethrow;
+      await _saveCache(wallet.id, cached.where((b) => b.id != budgetId).toList());
+      await Outbox.instance.enqueue(OutboxOp(
+        id: budgetId,
+        kind: OutboxKind.budgetDelete,
+        walletId: wallet.id,
+        payload: {'id': budgetId},
+        createdAt: DateTime.now(),
+      ));
+      await ref.read(syncInfoProvider.notifier).refresh();
+    }
     await refresh();
+  }
+
+  bool _isNetworkish(DioException e) {
+    final status = e.response?.statusCode;
+    if (status == null) return true;
+    return status >= 500;
   }
 
   /// Alerte budget déclenchée à 50 / 80 / 100 %.

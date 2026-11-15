@@ -21,6 +21,99 @@ function toTransaction(row) {
 }
 
 /**
+ * Opération d'épargne atomique (versement / retrait) :
+ * 1. verrouille le portefeuille (FOR UPDATE),
+ * 2. vérifie la capacité (versement ≤ Reste / retrait ≤ épargne),
+ * 3. insère la transaction d'épargne (rattachée à la période active),
+ * 4. met à jour savings_amount — le solde (balance) ne bouge pas :
+ *    l'argent reste dans le même compte, seul le « Reste » varie.
+ */
+async function createSavingsTransaction({ walletId, type, amount, date, time }) {
+  return withTransaction(async (client) => {
+    const locked = await client.query(
+      'SELECT id, user_id, balance, savings_amount, start_date FROM wallets WHERE id = $1 FOR UPDATE',
+      [walletId]
+    );
+    if (locked.rows.length === 0) {
+      throw ApiError.notFound('Portefeuille introuvable');
+    }
+    const balance = Number(locked.rows[0].balance);
+    const savings = Number(locked.rows[0].savings_amount || 0);
+    const available = balance - savings;
+
+    if (type === 'savings_deposit' && amount > available) {
+      throw ApiError.conflict(
+        'BALANCE_INSUFFICIENT',
+        'Versement impossible : le montant dépasse le Reste disponible',
+        { available, requested: amount }
+      );
+    }
+    if (type === 'savings_withdrawal' && amount > savings) {
+      throw ApiError.conflict(
+        'SAVINGS_INSUFFICIENT',
+        'Retrait impossible : le montant dépasse l’épargne disponible',
+        { savings, requested: amount }
+      );
+    }
+
+    const period = await periodRepository.ensureActiveWithClient(client, locked.rows[0]);
+
+    const { rows } = await client.query(
+      `INSERT INTO transactions (wallet_id, period_id, type, amount, category, description, date, time, payment_method)
+       VALUES ($1, $2, $3, $4, 'Épargne', NULL, $5, $6, NULL)
+       RETURNING *`,
+      [walletId, period.id, type, amount, date, time]
+    );
+    const transaction = toTransaction(rows[0]);
+
+    const delta = type === 'savings_deposit' ? amount : -amount;
+    const updated = await client.query(
+      'UPDATE wallets SET savings_amount = savings_amount + $2::bigint, updated_at = now() WHERE id = $1 RETURNING *',
+      [walletId, delta]
+    );
+
+    return { transaction, wallet: updated.rows[0] };
+  });
+}
+
+/** Retrait total : toute l'épargne retourne dans le Reste, une seule écriture. */
+async function withdrawAllSavings({ walletId, date, time }) {
+  return withTransaction(async (client) => {
+    const locked = await client.query(
+      'SELECT id, user_id, balance, savings_amount, start_date FROM wallets WHERE id = $1 FOR UPDATE',
+      [walletId]
+    );
+    if (locked.rows.length === 0) {
+      throw ApiError.notFound('Portefeuille introuvable');
+    }
+    const savings = Number(locked.rows[0].savings_amount || 0);
+
+    if (savings === 0) {
+      const period = await periodRepository.ensureActiveWithClient(client, locked.rows[0]);
+      void period; // période active garantie, aucun mouvement à écrire
+      return { transaction: null, wallet: locked.rows[0] };
+    }
+
+    const period = await periodRepository.ensureActiveWithClient(client, locked.rows[0]);
+
+    const { rows } = await client.query(
+      `INSERT INTO transactions (wallet_id, period_id, type, amount, category, description, date, time, payment_method)
+       VALUES ($1, $2, 'savings_withdrawal', $3, 'Épargne', NULL, $4, $5, NULL)
+       RETURNING *`,
+      [walletId, period.id, savings, date, time]
+    );
+    const transaction = toTransaction(rows[0]);
+
+    const updated = await client.query(
+      'UPDATE wallets SET savings_amount = 0, updated_at = now() WHERE id = $1 RETURNING *',
+      [walletId]
+    );
+
+    return { transaction, wallet: updated.rows[0] };
+  });
+}
+
+/**
  * Crée une transaction de façon ATOMIQUE :
  * 1. verrouille la ligne du portefeuille (FOR UPDATE → sérialise les écritures concurrentes),
  * 2. vérifie le solde disponible pour une dépense,
@@ -89,6 +182,12 @@ async function updateTransaction({ walletId, txId, type, amount, category, descr
     if (existing.rows.length === 0) throw ApiError.notFound('Transaction introuvable');
     const old = toTransaction(existing.rows[0]);
 
+    if (old.type === 'savings_deposit' || old.type === 'savings_withdrawal') {
+      throw ApiError.validation('Une opération d’épargne se gère depuis l’écran Épargne', {
+        field: 'type',
+      });
+    }
+
     const contribution = (t, a) => (t === 'expense' ? -a : a);
     const delta = contribution(type, amount) - contribution(old.type, old.amount);
 
@@ -138,10 +237,18 @@ async function deleteTransaction({ walletId, txId }) {
 
     await client.query('DELETE FROM transactions WHERE id = $1', [txId]);
 
-    const delta = old.type === 'expense' ? old.amount : -old.amount;
+    const isSavings = old.type === 'savings_deposit' || old.type === 'savings_withdrawal';
+    const delta = old.type === 'expense' ? old.amount : (isSavings ? 0 : -old.amount);
+    const savingsDelta = old.type === 'savings_deposit' ? -old.amount
+      : old.type === 'savings_withdrawal' ? old.amount
+      : 0;
     const updated = await client.query(
-      'UPDATE wallets SET balance = balance + $2::bigint, updated_at = now() WHERE id = $1 RETURNING balance',
-      [walletId, delta]
+      `UPDATE wallets SET
+         balance = balance + $2::bigint,
+         savings_amount = GREATEST(0, savings_amount + $3::bigint),
+         updated_at = now()
+       WHERE id = $1 RETURNING balance, savings_amount`,
+      [walletId, delta, savingsDelta]
     );
 
     return { newBalance: Number(updated.rows[0].balance) };
@@ -215,7 +322,13 @@ async function listTransactions({
   };
 
   if (periodId) add('period_id = $?', periodId);
-  if (type && ['expense', 'income'].includes(type)) add('type = $?', type);
+  if (type === 'savings') {
+    params.push('savings_deposit');
+    params.push('savings_withdrawal');
+    conditions.push(`type IN ($${params.length - 1}, $${params.length})`);
+  } else if (type && ['expense', 'income', 'savings_deposit', 'savings_withdrawal'].includes(type)) {
+    add('type = $?', type);
+  }
   if (category) add('category = $?', category);
   if (dateFrom) add('date >= $?', dateFrom);
   if (dateTo) add('date <= $?', dateTo);
@@ -273,6 +386,8 @@ async function exportAll(walletId) {
 module.exports = {
   toTransaction,
   createTransaction,
+  createSavingsTransaction,
+  withdrawAllSavings,
   updateTransaction,
   deleteTransaction,
   getTransactionForWallet,

@@ -13,7 +13,7 @@ class Transaction {
 
   final String id;
   final String walletId;
-  final String type; // 'expense' | 'income'
+  final String type; // 'expense' | 'income' | 'savings_deposit' | 'savings_withdrawal'
   final int amount; // entiers uniquement
   final String category;
   final String? description;
@@ -22,6 +22,10 @@ class Transaction {
   final String? paymentMethod;
 
   bool get isExpense => type == 'expense';
+  bool get isIncome => type == 'income';
+  bool get isSavingsDeposit => type == 'savings_deposit';
+  bool get isSavingsWithdrawal => type == 'savings_withdrawal';
+  bool get isSavings => isSavingsDeposit || isSavingsWithdrawal;
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
@@ -31,8 +35,13 @@ class Transaction {
       amount: asInt(json['amount']),
       category: (json['category'] ?? '') as String,
       description: json['description'] as String?,
-      date: (json['date'] ?? '') as String,
-      time: (json['time'] ?? '') as String,
+      // Tolère d'anciens caches avec un suffixe d'heure : on garde le jour civil.
+      date: ((json['date'] ?? '') as String).trim().length >= 10
+          ? ((json['date'] as String).trim().substring(0, 10))
+          : ((json['date'] ?? '') as String).trim(),
+      time: ((json['time'] ?? '') as String).trim().length >= 5
+          ? ((json['time'] as String).trim().substring(0, 5))
+          : ((json['time'] ?? '') as String).trim(),
       paymentMethod: json['paymentMethod'] as String?,
     );
   }

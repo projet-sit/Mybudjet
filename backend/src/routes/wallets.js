@@ -1,5 +1,6 @@
 const express = require('express');
 const walletController = require('../controllers/walletController');
+const savingsController = require('../controllers/savingsController');
 const { authenticate } = require('../middlewares/authenticate');
 
 const router = express.Router();
@@ -12,7 +13,9 @@ router.post('/', walletController.create);
 router.get('/:id', walletController.get);
 router.get('/:id/initial-amount/history', walletController.getHistory);
 router.patch('/:id/initial-amount', walletController.updateInitialAmount);
-router.patch('/:id/savings', walletController.setSavings);
+router.post('/:id/savings/deposit', savingsController.deposit);
+router.post('/:id/savings/withdraw', savingsController.withdraw);
+router.post('/:id/savings/withdraw-all', savingsController.withdrawAll);
 router.post('/:id/reset', walletController.reset);
 
 module.exports = router;

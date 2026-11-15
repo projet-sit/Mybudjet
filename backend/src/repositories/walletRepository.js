@@ -106,37 +106,6 @@ async function updateInitialAmount(walletId, newAmount) {
   });
 }
 
-/**
- * Fixe le montant mis de côté (réserve interne au solde).
- * Le trigger SQL rabaisse automatiquement l'épargne si le solde a changé.
- */
-async function setSavings(walletId, amount) {
-  return withTransaction(async (client) => {
-    const locked = await client.query('SELECT balance FROM wallets WHERE id = $1 FOR UPDATE', [
-      walletId,
-    ]);
-    if (locked.rows.length === 0) return null;
-
-    const reserved = await reservedSavings(client, walletId);
-    if (amount < reserved) {
-      throw ApiError.conflict(
-        'SAVINGS_LOCKED',
-        'Une partie de ton épargne est déjà réservée dans tes objectifs',
-        { reserved }
-      );
-    }
-
-    const { rows } = await client.query(
-      `UPDATE wallets
-       SET savings_amount = $2::bigint, updated_at = now()
-       WHERE id = $1
-       RETURNING *`,
-      [walletId, amount]
-    );
-    return toWallet(rows[0]);
-  });
-}
-
 async function getInitialAmountHistory(walletId) {
   const { rows } = await query(
     `SELECT id, old_value, new_value, changed_at
@@ -152,52 +121,11 @@ async function getInitialAmountHistory(walletId) {
   }));
 }
 
-/**
- * Repart à zéro : efface toutes les transactions, budgets, objectifs,
- * périodes et historique des montants initiaux du portefeuille, remet le solde
- * (et l'épargne) à 0 et recrée une période active démarrant aujourd'hui.
- */
-async function reset(walletId) {
-  return withTransaction(async (client) => {
-    await client.query('DELETE FROM transactions WHERE wallet_id = $1', [walletId]);
-    await client.query('DELETE FROM budgets WHERE wallet_id = $1', [walletId]);
-    await client.query('DELETE FROM goals WHERE wallet_id = $1', [walletId]);
-    await client.query('DELETE FROM periods WHERE wallet_id = $1', [walletId]);
-    await client.query('DELETE FROM initial_amount_history WHERE wallet_id = $1', [walletId]);
-
-    const today = new Date().toISOString().slice(0, 10);
-    const { rows } = await client.query(
-      `UPDATE wallets
-       SET balance = 0,
-           initial_amount = 0,
-           savings_amount = 0,
-           start_date = $2,
-           updated_at = now()
-       WHERE id = $1
-       RETURNING *`,
-      [walletId, today]
-    );
-
-    if (rows.length === 0) return null;
-    const wallet = toWallet(rows[0]);
-
-    await client.query(
-      `INSERT INTO periods (user_id, wallet_id, start_date, end_date, status)
-       VALUES ((SELECT user_id FROM wallets WHERE id = $1), $1, $2, $3, 'active')`,
-      [wallet.id, today, monthEnd(today)]
-    );
-
-    return wallet;
-  });
-}
-
 module.exports = {
   toWallet,
   findByUserId,
   findById,
   create,
   updateInitialAmount,
-  setSavings,
   getInitialAmountHistory,
-  reset,
 };

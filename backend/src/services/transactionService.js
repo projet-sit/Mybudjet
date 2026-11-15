@@ -92,7 +92,9 @@ async function exportCsv(uid, walletId) {
   const header = 'Date;Heure;Type;Categorie;Description;Mode de paiement;Montant;Solde apres';
   let running = Number(wallet.initialAmount);
   const lines = transactions.map((t) => {
-    running += t.type === 'income' ? t.amount : -t.amount;
+    // Les opérations d'épargne ne modifient pas le solde (même compte).
+    const delta = t.type === 'income' ? t.amount : (t.type === 'expense' ? -t.amount : 0);
+    running += delta;
     return [
       t.date,
       t.time,

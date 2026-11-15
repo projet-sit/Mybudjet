@@ -180,6 +180,120 @@ async function nextPeriod({ walletId, userId, mode, today = todayIso() }) {
   });
 }
 
+/**
+ * Remise à zéro avec archivage :
+ * 1. archive la période active (snapshot complet : solde, épargne, totaux) —
+ *    l'historique est CONSERVÉ, les stats y ont toujours accès ;
+ * 2. crée une nouvelle période active démarrant aujourd'hui ;
+ * 3. solde remis à zéro (l'épargne est conservée sauf includeSavings,
+ *    auquel cas elle retourne aussi à zéro) ;
+ * 4. annulation possible pendant 10 s via undoPeriod (snapshot précédent).
+ */
+async function resetWithArchive({ walletId, userId, includeSavings = false, today = todayIso() }) {
+  return withTransaction(async (client) => {
+    const walletRes = await client.query(
+      'SELECT * FROM wallets WHERE id = $1 AND user_id = $2 FOR UPDATE',
+      [walletId, userId]
+    );
+    if (!walletRes.rows[0]) throw ApiError.notFound('Portefeuille introuvable');
+    const wallet = walletRes.rows[0];
+
+    const active = await ensureActiveWithClient(client, wallet);
+
+    const totals = await client.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) AS expenses,
+         COALESCE(SUM(CASE WHEN type = 'income' THEN amount END), 0) AS incomes,
+         COALESCE(SUM(CASE WHEN type = 'savings_deposit' THEN amount END), 0) AS saved,
+         COUNT(*) AS count
+       FROM transactions WHERE wallet_id = $1 AND period_id = $2`,
+      [walletId, active.id]
+    );
+
+    const goals = await client.query(
+      'SELECT COALESCE(SUM(saved_amount), 0) AS total FROM goals WHERE wallet_id = $1',
+      [walletId]
+    );
+    const goalsSaved = Number(goals.rows[0].total);
+
+    const previousWallet = {
+      initialAmount: Number(wallet.initial_amount),
+      balance: Number(wallet.balance),
+      savingsAmount: Number(wallet.savings_amount || 0),
+      startDate: toDateOnly(wallet.start_date),
+    };
+
+    const archivedSnapshot = {
+      wallet: previousWallet,
+      totals: {
+        expenses: Number(totals.rows[0].expenses),
+        incomes: Number(totals.rows[0].incomes),
+        saved: Number(totals.rows[0].saved),
+        transactions: Number(totals.rows[0].count),
+      },
+      goalsSaved,
+      reason: 'reset',
+      closedAt: new Date().toISOString(),
+    };
+
+    await client.query(
+      `UPDATE periods
+       SET status = 'archived', snapshot = $2::jsonb, closed_at = now()
+       WHERE id = $1`,
+      [active.id, JSON.stringify(archivedSnapshot)]
+    );
+
+    const keptSavings = includeSavings ? 0 : previousWallet.savingsAmount;
+    const newBalance = keptSavings; // Reste = 0 ; argent total = épargne conservée
+    const startDate = today;
+    const endDate = monthEnd(today);
+
+    const newPeriod = await client.query(
+      `INSERT INTO periods (user_id, wallet_id, start_date, end_date, status, snapshot)
+       VALUES ($1, $2, $3, $4, 'active', $5::jsonb)
+       RETURNING *`,
+      [
+        userId,
+        walletId,
+        startDate,
+        endDate,
+        JSON.stringify({
+          previousPeriodId: active.id,
+          previousWallet,
+          previousGoalsSaved: goalsSaved,
+          includeSavings,
+        }),
+      ]
+    );
+
+    const updatedWallet = await client.query(
+      `UPDATE wallets
+       SET initial_amount = $2::bigint,
+           balance = $3::bigint,
+           savings_amount = $4::bigint,
+           start_date = $5,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [walletId, keptSavings, newBalance, keptSavings, startDate]
+    );
+
+    await client.query(
+      `INSERT INTO initial_amount_history (wallet_id, old_value, new_value)
+       VALUES ($1, $2, $3)`,
+      [walletId, previousWallet.balance, keptSavings]
+    );
+
+    return {
+      period: toPeriod(newPeriod.rows[0]),
+      wallet: toWallet(updatedWallet.rows[0]),
+      previousPeriodId: active.id,
+      mode: 'reset',
+      undoExpiresAt: new Date(Date.now() + UNDO_WINDOW_MS).toISOString(),
+    };
+  });
+}
+
 async function undoPeriod({ walletId, userId, periodId }) {
   return withTransaction(async (client) => {
     const walletRes = await client.query(
@@ -282,4 +396,5 @@ module.exports = {
   getInfo,
   nextPeriod,
   undoPeriod,
+  resetWithArchive,
 };

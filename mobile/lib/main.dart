@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/theme/app_theme.dart';
 import 'providers/app_prefs_provider.dart';
+import 'providers/auth_provider.dart';
 import 'providers/onboarding_provider.dart';
+import 'providers/sync_provider.dart';
+import 'providers/transaction_provider.dart';
+import 'providers/wallet_provider.dart';
 import 'routing/app_router.dart';
+import 'services/api_client.dart';
+import 'services/outbox.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
+  await initializeDateFormatting('fr_FR');
   // Lu AVANT runApp : pas de clignotement de l'onboarding au démarrage.
   final prefs = await SharedPreferences.getInstance();
   final onboardingSeen = prefs.getBool(OnboardingSeenNotifier.key) ?? false;
+  // Réveil discret du backend (plan gratuit : il dort après inactivité).
+  ApiClient.instance.wake();
   runApp(
     ProviderScope(
       overrides: [
@@ -26,11 +36,53 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  AppLifecycleListener? _lifecycle;
+  bool _resumeRunning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _onResume);
+  }
+
+  /// Retour au premier plan : tout est revérifié proprement —
+  /// jamais besoin de se déconnecter/reconnecter.
+  Future<void> _onResume() async {
+    if (_resumeRunning) return;
+    _resumeRunning = true;
+    try {
+      // 1. Connectivité recalculée (quitte seul l'état à jour).
+      await ref.read(syncInfoProvider.notifier).refresh();
+      // 2. Réveil discret du backend + revalidation de la session (jeton).
+      ApiClient.instance.wake();
+      await ref.read(authControllerProvider.notifier).revalidate();
+      // 3. Rejoue les écritures en attente, puis rafraîchit tout.
+      await Outbox.instance.flush();
+      await ref.read(walletControllerProvider.notifier).refresh();
+      ref.invalidate(dashboardControllerProvider);
+      ref.invalidate(transactionsProvider);
+      await ref.read(syncInfoProvider.notifier).refresh();
+    } finally {
+      _resumeRunning = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeControllerProvider).value ?? ThemeMode.light;
 

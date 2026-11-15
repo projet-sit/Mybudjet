@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
+import 'package:mybudget/core/utils/date_format.dart';
 import 'package:mybudget/core/utils/money.dart';
 import 'package:mybudget/models/transaction.dart';
 import 'package:mybudget/widgets/transaction_tile.dart';
 
 void main() {
-  testWidgets('TransactionTile affiche une dépense en rouge avec le signe -',
+  setUpAll(() async {
+    await initializeDateFormatting('fr_FR');
+  });
+
+  testWidgets('TransactionTile affiche une dépense en rouge avec le signe −',
       (WidgetTester tester) async {
     final tx = Transaction(
       id: 't1',
@@ -47,14 +53,56 @@ void main() {
       MaterialApp(home: Scaffold(body: TransactionTile(transaction: tx))),
     );
 
+    // Titre = catégorie (pas de note) et sous-titre SANS doublon « Salaire · Salaire ».
     expect(find.text('Salaire'), findsOneWidget);
-    expect(find.textContaining('Salaire ·'), findsOneWidget);
+    expect(find.textContaining('Salaire · Salaire'), findsNothing);
     expect(find.text('+20 000'), findsOneWidget);
+  });
+
+  testWidgets('TransactionTile affiche une opération d’épargne en neutre (pas de rouge)',
+      (WidgetTester tester) async {
+    final tx = Transaction(
+      id: 't3',
+      walletId: 'w1',
+      type: 'savings_deposit',
+      amount: 10000,
+      category: 'Épargne',
+      description: null,
+      date: '2026-01-04',
+      time: '09:00',
+      paymentMethod: null,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: TransactionTile(transaction: tx))),
+    );
+
+    expect(find.text('Épargne'), findsWidgets);
+    expect(find.text('10 000'), findsOneWidget);
+    // Pas de signe +/- : l'épargne n'est ni une dépense ni un revenu.
+    expect(find.text('−10 000'), findsNothing);
+    expect(find.text('+10 000'), findsNothing);
   });
 
   test('formatXof groupe les milliers', () {
     expect(formatXof(150000), '150 000 FCFA');
     expect(formatXof(150000, withCurrency: false), '150 000');
     expect(formatXof(0), '0 FCFA');
+  });
+
+  test('formatDateTimeFr produit JJ/MM/AAAA · HH:mm en heure locale', () {
+    expect(formatDateTimeFr('2026-11-14', '12:32'), '14/11/2026 · 12:32');
+    expect(formatDateFr('2026-01-03'), '03/01/2026');
+  });
+
+  test('les dates seules ne sont jamais décalées par le fuseau', () {
+    final d = DateFormatUtil.parseLocal('2026-11-14');
+    expect(d, isNotNull);
+    expect(d!.year, 2026);
+    expect(d.month, 11);
+    expect(d.day, 14);
+    // ISO complète (UTC) → convertie en heure locale, jamais affichée brute.
+    final z = DateFormatUtil.parseLocal('2026-11-14T00:00:00.000Z')!;
+    expect(z.isUtc, isFalse);
   });
 }

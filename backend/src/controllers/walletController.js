@@ -53,22 +53,16 @@ async function getHistory(req, res, next) {
   }
 }
 
-async function setSavings(req, res, next) {
-  try {
-    if (!req.body || typeof req.body !== 'object') {
-      throw ApiError.validation('Corps de requête invalide');
-    }
-    const wallet = await walletService.setSavings(req.uid, req.params.id, req.body);
-    return success(res, { wallet });
-  } catch (err) {
-    return next(err);
-  }
-}
-
 async function reset(req, res, next) {
   try {
-    const wallet = await walletService.resetWallet(req.uid, req.params.id);
-    return success(res, { wallet });
+    const result = await walletService.resetWallet(req.uid, req.params.id, req.body || {});
+    return success(res, {
+      period: result.period,
+      wallet: result.wallet,
+      previousPeriodId: result.previousPeriodId,
+      mode: result.mode,
+      undoExpiresAt: result.undoExpiresAt,
+    });
   } catch (err) {
     return next(err);
   }
@@ -80,6 +74,5 @@ module.exports = {
   get,
   updateInitialAmount,
   getHistory,
-  setSavings,
   reset,
 };

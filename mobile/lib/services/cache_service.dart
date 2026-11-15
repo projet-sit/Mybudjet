@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dashboard.dart';
+import '../models/transaction.dart';
 import '../models/wallet.dart';
 import 'api_client.dart';
 
@@ -75,10 +75,52 @@ class CacheService {
     }
   }
 
-  /// À utiliser lors de la déconnexion / suppression de compte.
+  /// Cache local des budgets (dernière réponse réelle du serveur).
+  Future<void> saveBudgets(String walletId, List<Map<String, dynamic>> budgets) async {
+    final prefs = await _prefs;
+    await prefs.setString('cache_budgets_$walletId', jsonEncode(budgets));
+  }
+
+  Future<List<Budget>> loadBudgets(String walletId) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString('cache_budgets_$walletId');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Budget.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Cache local complet des opérations (dernière liste connue du serveur).
+  /// Sert à la recherche hors-ligne et au démarrage instantané.
+  Future<void> saveTransactions(String walletId, List<Map<String, dynamic>> txs) async {
+    final prefs = await _prefs;
+    await prefs.setString('cache_txs_$walletId', jsonEncode(txs));
+  }
+
+  Future<List<Transaction>> loadTransactions(String walletId) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString('cache_txs_$walletId');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Transaction.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<void> clearWallet() async {
     final prefs = await _prefs;
     await prefs.remove('cache_wallet');
+    final keys = prefs.getKeys().where((k) => k.startsWith('cache_dashboard_') || k.startsWith('cache_txs_') || k.startsWith('cache_budgets_')).toList();
+    for (final k in keys) {
+      await prefs.remove(k);
+    }
   }
 
   /// Phase 10 — export CSV : téléchargé puis partagé via la feuille de partage.
@@ -99,15 +141,3 @@ class CacheService {
     await Share.shareXFiles([XFile(path)]);
   }
 }
-
-/// Phase 10 — état « hors ligne » observé par les écrans (bandeau).
-class OfflineNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void set(bool value) {
-    if (state != value) state = value;
-  }
-}
-
-final offlineProvider = NotifierProvider<OfflineNotifier, bool>(OfflineNotifier.new);

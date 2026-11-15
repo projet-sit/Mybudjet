@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
+import '../models/transaction.dart';
 import '../models/wallet.dart';
 import '../services/cache_service.dart';
+import '../services/outbox.dart';
 import '../services/wallet_repository.dart';
 
 /// Portefeuille courant de l'utilisateur (null si aucun).
@@ -31,7 +34,6 @@ class WalletController extends AsyncNotifier<Wallet?> {
       if (wallet != null) {
         await CacheService.instance.saveWallet(wallet);
       }
-      ref.read(offlineProvider.notifier).set(false);
       return wallet;
     } on DioException catch (_) {
       return _fallbackToCache();
@@ -43,10 +45,9 @@ class WalletController extends AsyncNotifier<Wallet?> {
   Future<Wallet?> _fallbackToCache() async {
     final cached = await CacheService.instance.loadWallet();
     if (cached != null) {
-      ref.read(offlineProvider.notifier).set(true);
       return cached;
     }
-    throw StateError('Hors ligne et aucune donnée enregistrée');
+    throw StateError('Synchronisation indisponible et aucune donnée enregistrée');
   }
 
   Future<void> _refreshInBackground() async {
@@ -55,11 +56,9 @@ class WalletController extends AsyncNotifier<Wallet?> {
       if (wallet != null) {
         await CacheService.instance.saveWallet(wallet);
       }
-      ref.read(offlineProvider.notifier).set(false);
       state = AsyncData(wallet);
     } catch (_) {
-      // Hors ligne : on garde le portefeuille en cache (mode dégradé).
-      ref.read(offlineProvider.notifier).set(true);
+      // Backend injoignable : on garde le portefeuille en cache (repli local).
     }
   }
 
@@ -78,19 +77,87 @@ class WalletController extends AsyncNotifier<Wallet?> {
         currency: currency,
       );
       await CacheService.instance.saveWallet(wallet);
-      ref.read(offlineProvider.notifier).set(false);
       return wallet;
     });
   }
 
-  /// Met de côté un montant dans le même compte (0 = tout récupérer).
-  /// Lève une erreur en cas de refus serveur (montant > solde).
-  Future<void> setSavings(int amount) async {
+  /// Verse un montant à l'épargne (argent sorti du Reste, atomique).
+  /// Hors-ligne : mise en attente + application optimiste immédiate.
+  Future<void> savingsDeposit(int amount) => _savingsMove(amount, isDeposit: true);
+
+  /// Retire un montant de l'épargne (retour dans le Reste, atomique).
+  Future<void> savingsWithdraw(int amount) => _savingsMove(amount, isDeposit: false);
+
+  /// « Tout récupérer » : toute l'épargne retourne dans le Reste, atomique.
+  Future<WriteResult> savingsWithdrawAll() async {
+    final current = state.value;
+    if (current == null) return const WriteResult.sent();
+    try {
+      final updated = await WalletRepository.instance.savingsWithdrawAll(current.id);
+      await CacheService.instance.saveWallet(updated);
+      state = AsyncData(updated);
+      return const WriteResult.sent();
+    } on DioException catch (e) {
+      if (_isNetworkish(e)) {
+        final tx = Transaction(
+          id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+          walletId: current.id,
+          type: 'savings_withdrawal',
+          amount: current.savingsAmount > 0 ? current.savingsAmount : 0,
+          category: 'Épargne',
+          description: null,
+          date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+          time: DateFormat('HH:mm').format(DateTime.now()),
+        );
+        if (current.savingsAmount > 0) {
+          // L'overlay applique la totalité : l'épargne passe à 0 côté cache.
+          await Outbox.instance.applyPendingTransactionLocally(current.id, tx);
+        }
+        await Outbox.instance.enqueueSavings(current.id, kind: OutboxKind.savingsWithdrawAll);
+        final updated = await CacheService.instance.loadWallet();
+        if (updated != null) state = AsyncData(updated);
+        return const WriteResult.queued();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _savingsMove(int amount, {required bool isDeposit}) async {
     final current = state.value;
     if (current == null) return;
-    final updated = await WalletRepository.instance.setSavings(current.id, amount);
-    await CacheService.instance.saveWallet(updated);
-    state = AsyncData(updated);
+    try {
+      final updated = isDeposit
+          ? await WalletRepository.instance.savingsDeposit(current.id, amount)
+          : await WalletRepository.instance.savingsWithdraw(current.id, amount);
+      await CacheService.instance.saveWallet(updated);
+      state = AsyncData(updated);
+    } on DioException catch (e) {
+      if (!_isNetworkish(e)) rethrow; // refus métier : on laisse l'écran afficher
+      final tx = Transaction(
+        id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+        walletId: current.id,
+        type: isDeposit ? 'savings_deposit' : 'savings_withdrawal',
+        amount: amount,
+        category: 'Épargne',
+        description: null,
+        date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        time: DateFormat('HH:mm').format(DateTime.now()),
+      );
+      await Outbox.instance.applyPendingTransactionLocally(current.id, tx);
+      await Outbox.instance.enqueueSavings(
+        current.id,
+        kind: isDeposit ? OutboxKind.savingsDeposit : OutboxKind.savingsWithdraw,
+        amount: amount,
+      );
+      final updated = await CacheService.instance.loadWallet();
+      if (updated != null) state = AsyncData(updated);
+    }
+  }
+
+  bool _isNetworkish(DioException e) {
+    final status = e.response?.statusCode;
+    if (status == null) return true;
+    return status >= 500;
   }
 
   Future<void> updateInitialAmount(int newAmount) async {
@@ -106,14 +173,13 @@ class WalletController extends AsyncNotifier<Wallet?> {
 
   Future<void> refresh() async {
     // Pas d'AsyncLoading : on garde les données en cache affichées pendant la
-    // revalidation réseau (pull-to-refresh fluide, sans spinner hors-ligne).
+    // revalidation (repli cache instantané, se termine toujours).
     state = await AsyncValue.guard(() async {
       try {
         final wallet = await WalletRepository.instance.first();
         if (wallet != null) {
           await CacheService.instance.saveWallet(wallet);
         }
-        ref.read(offlineProvider.notifier).set(false);
         return wallet;
       } catch (_) {
         return _fallbackToCache();
@@ -134,7 +200,7 @@ class WalletController extends AsyncNotifier<Wallet?> {
         final err = data['error'] as Map<String, dynamic>;
         if (err['message'] is String) return err['message'] as String;
       }
-      return 'Erreur réseau — vérifie ta connexion';
+      return 'Synchronisation indisponible — réessayez';
     }
     return 'Une erreur est survenue';
   }

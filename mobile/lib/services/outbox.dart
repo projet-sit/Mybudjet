@@ -662,6 +662,22 @@ class Outbox {
     return false;
   }
 
+  /// Le serveur connaît-il l'historique des périodes (nouvelles routes) ?
+  /// Sans lui, /reset DÉTRUIRAIT TOUT — on ne rejoue pas resetAll sur un serveur obsolète.
+  Future<bool> _serverHasPeriodsApi(String walletId) async {
+    try {
+      await ApiClient.instance.dio.head(
+        '/wallets/$walletId/periods',
+        options: Options(receiveTimeout: const Duration(seconds: 10), connectTimeout: const Duration(seconds: 10)),
+      );
+      return true;
+    } on DioException catch (_) {
+      return false; // 404 (ancien serveur) comme toute autre erreur : on ne rejoue pas
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Rejoue les opérations en attente, dans l'ordre. S'arrête à la première
   /// erreur réseau (les suivantes attendront le prochain passage).
   ///
@@ -676,6 +692,11 @@ class Outbox {
       final ops = await _load();
       if (ops.isEmpty) break;
       final op = ops.first;
+      // Un serveur obsolète DÉTRUIRAIT tout avec /reset — on ne le rejoue pas tant
+      // que les nouvelles routes n'existent pas (la remise à zéro est annulée côté local).
+      if (op.kind == OutboxKind.resetAll && !(await _serverHasPeriodsApi(op.walletId))) {
+        break;
+      }
       try {
         await _execute(op);
       } on DioException catch (e) {

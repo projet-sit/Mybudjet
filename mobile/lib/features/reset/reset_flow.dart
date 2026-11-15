@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +26,26 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
     return;
   }
 
+  // Garde-fou : si le backend ne connaît pas l'historique des périodes, son
+  // /reset DÉTRUIT TOUT (pas d'archivage) — on bloque plutôt que d'archiver.
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await PeriodRepository.instance.list(wallet.id).timeout(const Duration(seconds: 20));
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 404) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Réinitialisation indisponible : le serveur doit être mis à jour. Réessaie dans quelques minutes.'),
+      ));
+      return;
+    }
+    // Autre erreur réseau : on continue (le flux gère déjà la mise en attente hors-ligne).
+  } on TimeoutException {
+    messenger.showSnackBar(const SnackBar(content: Text('Serveur lent — réessaie dans un instant.')));
+    return;
+  }
+
   // ---------- Confirmation 1 : ce qui sera remis à zéro ----------
+  if (!context.mounted) return;
   var includeSavings = false;
   final step1 = await showDialog<bool>(
     context: context,

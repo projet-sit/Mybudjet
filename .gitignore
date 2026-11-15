@@ -2,3 +2,6 @@
 mobile/.env.lan.bak
 
 backend/.env.production.example
+
+mobile/.env
+

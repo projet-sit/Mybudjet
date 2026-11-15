@@ -6,7 +6,6 @@ import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/onboarding/wallet_setup_screen.dart';
-import '../features/periods/periods_history_screen.dart';
 import '../features/savings/savings_screen.dart';
 import '../features/shell/main_shell.dart';
 import '../features/onboarding/onboarding_screen.dart';
@@ -43,7 +42,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/wallet-setup', builder: (context, state) => const WalletSetupScreen()),
       GoRoute(path: '/home', builder: (context, state) => const MainShell()),
       GoRoute(path: '/savings', builder: (context, state) => const SavingsScreen()),
-      GoRoute(path: '/periods', builder: (context, state) => const PeriodsHistoryScreen()),
       GoRoute(path: '/stats', builder: (context, state) => const StatsScreen()),
     ],
     errorBuilder: (context, state) => Scaffold(

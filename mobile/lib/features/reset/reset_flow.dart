@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/period.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../services/api_client.dart';
 import '../../services/outbox.dart';
 import '../../services/period_repository.dart';
 import '../../providers/sync_provider.dart';
@@ -30,7 +31,13 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
   // /reset DÉTRUIT TOUT (pas d'archivage) — on bloque plutôt que d'archiver.
   final messenger = ScaffoldMessenger.of(context);
   try {
-    await PeriodRepository.instance.list(wallet.id).timeout(const Duration(seconds: 20));
+    await ApiClient.instance.dio.head(
+      '/wallets/${wallet.id}/periods',
+      options: Options(
+        receiveTimeout: const Duration(seconds: 20),
+        connectTimeout: const Duration(seconds: 20),
+      ),
+    );
   } on DioException catch (e) {
     if (e.response?.statusCode == 404) {
       messenger.showSnackBar(const SnackBar(
@@ -39,9 +46,6 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
       return;
     }
     // Autre erreur réseau : on continue (le flux gère déjà la mise en attente hors-ligne).
-  } on TimeoutException {
-    messenger.showSnackBar(const SnackBar(content: Text('Serveur lent — réessaie dans un instant.')));
-    return;
   }
 
   // ---------- Confirmation 1 : ce qui sera remis à zéro ----------

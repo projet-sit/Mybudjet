@@ -275,6 +275,10 @@ void main() {
 
       final posted = <Map<String, dynamic>>[];
       dio.httpClientAdapter = _FakeAdapter((options) async {
+        // Le serveur "v2" répond 200 au HEAD /periods (détection côté outbox).
+        if (options.method == 'HEAD' && options.path.endsWith('/periods')) {
+          return _json({}, 200);
+        }
         if (options.path.endsWith('/reset')) {
           posted.add(Map<String, dynamic>.from(options.data as Map));
           return _json({
@@ -314,6 +318,27 @@ void main() {
       expect(posted, hasLength(1));
       expect(posted.first['includeSavings'], isFalse);
       expect(await Outbox.instance.count(), 0);
+    });
+
+    test('serveur obsolète (sans API périodes) : un reset en attente n’est PAS rejoué', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cache_wallet', jsonEncode(_wallet(balance: 80000, savings: 30000).toJson()));
+
+      await Outbox.instance.applyResetLocally('w1', includeSavings: true);
+      await Outbox.instance.enqueueReset('w1', includeSavings: true);
+      expect(await Outbox.instance.count(), 1);
+
+      // Serveur ancien : HEAD /periods → 404.
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        if (options.method == 'HEAD' && options.path.endsWith('/periods')) {
+          return _json({}, 404);
+        }
+        return _json({'error': {'message': 'introuvable'}}, 404);
+      });
+
+      final result = await Outbox.instance.flush();
+      expect(result.replayed, 0);
+      expect(await Outbox.instance.count(), 1, reason: 'le reset doit rester en attente, jamais rejoué sur un serveur qui détruit tout');
     });
 
     test('conserve l’épargne par défaut, la remet à zéro sur demande', () async {

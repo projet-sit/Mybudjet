@@ -61,9 +61,8 @@ jobs:
         working-directory: mobile/build/app/outputs/flutter-apk
         run: |
           gh release view latest --repo projet-sit/Mybudjet >/dev/null 2>&1 || \
-            gh release create latest --repo projet-sit/Mybudjet --title "Latest MYBUDGET APK" --notes "Rolling latest MYBUDGET APK build — updated automatically on every push to main."
-          gh release delete-asset latest app-arm64-v8a-direct-release-obfuscated.apk --yes || true
-          gh release upload latest app-arm64-v8a-direct-release-obfuscated.apk
+            gh release create latest --repo projet-sit/Mybudjet --title "Latest MYBUDGET APK" --notes "Rolling latest MYBUDGET APK build - updated automatically on every push to main."
+          gh release upload latest app-arm64-v8a-direct-release-obfuscated.apk --clobber
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4

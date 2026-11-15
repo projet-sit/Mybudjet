@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +11,7 @@ import '../../models/period.dart';
 import '../../providers/periods_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../services/api_client.dart';
 import '../../services/period_repository.dart';
 import '../../widgets/transaction_tile.dart';
 
@@ -22,13 +25,36 @@ class PeriodsHistoryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(periodsHistoryProvider);
+    // Réveille le backend en douceur si la première ouverture tombe sur une mise en veille.
+    unawaited(ApiClient.instance.wake());
 
     return Scaffold(
       appBar: AppBar(title: const Text('Historique des périodes')),
       body: RefreshIndicator(
         onRefresh: () => ref.read(periodsHistoryProvider.notifier).refresh(),
         child: state.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Chargement de tes périodes…',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Si le serveur est en veille, cela peut prendre jusqu’à une minute.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: Color(0xFF676E75)),
+                  ),
+                ],
+              ),
+            ),
+          ),
           error: (error, _) => Center(
             child: Padding(
               padding: const EdgeInsets.all(24),

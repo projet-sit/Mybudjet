@@ -58,10 +58,18 @@ class WalletRepository {
     return Wallet.fromJson(Map<String, dynamic>.from(walletRaw));
   }
 
-  /// Fixe le montant mis de côté (réserve dans le même compte).
-  /// Le backend refuse si le montant dépasse le solde.
-  Future<Wallet> setSavings(String walletId, int amount) async {
-    final response = await _dio.patch('/wallets/$walletId/savings', data: {
+  /// Versement à l'épargne (l'argent reste dans le compte, en réserve).
+  /// Crée une transaction « Épargne » visible dans l'historique.
+  Future<Wallet> depositSavings(String walletId, int amount) async {
+    final response = await _dio.post('/wallets/$walletId/savings/deposit', data: {
+      'amount': amount,
+    });
+    return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
+  }
+
+  /// Retrait d'épargne : l'argent revient dans le Reste (transaction « Épargne »).
+  Future<Wallet> withdrawSavings(String walletId, int amount) async {
+    final response = await _dio.post('/wallets/$walletId/savings/withdraw', data: {
       'amount': amount,
     });
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);

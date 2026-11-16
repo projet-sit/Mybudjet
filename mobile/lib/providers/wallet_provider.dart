@@ -7,6 +7,7 @@ import '../core/utils/money.dart';
 import '../models/wallet.dart';
 import '../services/cache_service.dart';
 import '../services/wallet_repository.dart';
+import 'transaction_provider.dart';
 
 /// Portefeuille courant de l'utilisateur (null si aucun).
 ///
@@ -81,15 +82,28 @@ class WalletController extends AsyncNotifier<Wallet?> {
 
   /// Fixe le montant mis de côté (réserve dans le même compte).
   /// Le montant est validé côté UI (0 ≤ newAmount ≤ solde).
+  ///
+  /// Le backend gère les mouvements d'épargne comme des transactions atomiques :
+  /// on applique donc la DIFFÉRENCE (versement si ça augmente, retrait si ça
+  /// baisse, rien si inchangé) — une seule transaction « Épargne » par action.
   Future<void> setSavings(int newAmount) async {
     final current = state.value;
     if (current == null) return;
     if (newAmount < 0 || newAmount > current.balance) {
       throw StateError('Montant invalide — entre 0 et ${formatXof(current.balance)}');
     }
-    final updated = await WalletRepository.instance.setSavings(current.id, newAmount);
+    final delta = newAmount - current.savingsAmount;
+    if (delta == 0) {
+      // Rien à faire : l'écran d'épargne affiche toujours l'état courant.
+      return;
+    }
+    final updated = delta > 0
+        ? await WalletRepository.instance.depositSavings(current.id, delta)
+        : await WalletRepository.instance.withdrawSavings(current.id, -delta);
     await CacheService.instance.saveWallet(updated);
     state = AsyncData(updated);
+    ref.invalidate(transactionsProvider);
+    ref.invalidate(dashboardControllerProvider);
   }
 
   Future<void> updateInitialAmount(int newAmount) async {

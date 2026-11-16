@@ -8,6 +8,8 @@ const tokenRepository = require('../repositories/tokenRepository');
 
 const BCRYPT_ROUNDS = 10;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Numéro international : + suivi du code pays puis 7 à 14 chiffres (ex. +22997000000)
+const PHONE_RE = /^\+[1-9]\d{7,14}$/;
 
 function signAccessToken(payload) {
   return jwt.sign(payload, env.jwt.secret, { expiresIn: env.jwt.accessExpiresIn });
@@ -29,48 +31,72 @@ function clean(name) {
   return String(name || '').trim().replace(/\s+/g, ' ');
 }
 
-async function register({ displayName, email, password }) {
+async function register({ displayName, email, phone, password }) {
   const name = clean(displayName);
-  const mail = String(email || '').trim().toLowerCase();
+  const mail = String(email || '').trim().toLowerCase() || null;
+  const tel = String(phone || '').trim();
   const pass = String(password || '');
 
   if (name.length < 2 || name.length > 100) {
     throw ApiError.validation('Le nom complet doit contenir entre 2 et 100 caractères', { field: 'displayName' });
   }
-  if (!EMAIL_RE.test(mail)) {
+  // Le numéro de téléphone est le nouvel identifiant ; l'e-mail est facultatif
+  // (réservé à la récupération de mot de passe). On accepte l'e-mail seul pour
+  // les anciens clients (rétrocompatibilité).
+  if (tel) {
+    if (!PHONE_RE.test(tel)) {
+      throw ApiError.validation('Numéro de téléphone invalide', { field: 'phone' });
+    }
+  } else if (mail && EMAIL_RE.test(mail)) {
+    // Héritage : inscription possible avec e-mail seul via les anciennes versions.
+  } else if (mail) {
+    throw ApiError.validation('Adresse e-mail invalide', { field: 'email' });
+  } else {
+    throw ApiError.validation('Numéro de téléphone requis', { field: 'phone' });
+  }
+  if (mail && !EMAIL_RE.test(mail)) {
     throw ApiError.validation('Adresse e-mail invalide', { field: 'email' });
   }
   if (pass.length < 6) {
     throw ApiError.validation('Le mot de passe doit contenir au moins 6 caractères', { field: 'password' });
   }
 
-  const existing = await userRepository.findByEmail(mail);
-  if (existing) {
-    throw ApiError.conflict('EMAIL_ALREADY_IN_USE', 'Un compte existe déjà avec cet e-mail', { field: 'email' });
+  if (tel) {
+    const existingPhone = await userRepository.findByPhone(tel);
+    if (existingPhone) {
+      throw ApiError.conflict('PHONE_ALREADY_IN_USE', 'Un compte existe déjà avec ce numéro', { field: 'phone' });
+    }
+  }
+  if (mail) {
+    const existing = await userRepository.findByEmail(mail);
+    if (existing) {
+      throw ApiError.conflict('EMAIL_ALREADY_IN_USE', 'Un compte existe déjà avec cet e-mail', { field: 'email' });
+    }
   }
 
   const passwordHash = await bcrypt.hash(pass, BCRYPT_ROUNDS);
-  const user = await userRepository.create({ displayName: name, email: mail, passwordHash });
+  const user = await userRepository.create({ displayName: name, email: mail, phone: tel || null, passwordHash });
   const tokens = await issueTokens(user.id);
   return { user, tokens };
 }
 
-async function login({ email, password }) {
-  const mail = String(email || '').trim().toLowerCase();
+async function login({ email, phone, password }) {
+  // Connexion par téléphone (nouveau) ou e-mail (anciens comptes).
+  const identifier = String(phone || email || '').trim();
   const pass = String(password || '');
 
-  if (!EMAIL_RE.test(mail) || pass.length === 0) {
-    throw ApiError.validation('E-mail ou mot de passe invalide');
+  if (!identifier || pass.length === 0) {
+    throw ApiError.validation('Numéro (ou e-mail) et mot de passe requis');
   }
 
-  const user = await userRepository.findByEmail(mail);
+  const user = await userRepository.findByIdentifier(identifier);
   if (!user) {
-    throw ApiError.unauthorized('E-mail ou mot de passe incorrect');
+    throw ApiError.unauthorized('Numéro (ou e-mail) ou mot de passe incorrect');
   }
 
   const match = await bcrypt.compare(pass, user.password_hash);
   if (!match) {
-    throw ApiError.unauthorized('E-mail ou mot de passe incorrect');
+    throw ApiError.unauthorized('Numéro (ou e-mail) ou mot de passe incorrect');
   }
 
   const tokens = await issueTokens(user.id);

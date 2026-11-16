@@ -14,22 +14,67 @@ class AuthRepository {
   final TokenStorage _storage = TokenStorage();
   String? get currentAccessToken => ApiClient.instance.accessToken;
 
-  Future<AuthSession> register({
-    required String displayName,
-    required String email,
-    required String password,
-  }) async {
-    final response = await _dio.post('/auth/register', data: {
-      'displayName': displayName,
-      'email': email,
-      'password': password,
-    });
-    return _saveSession(response.data['data'] as Map<String, dynamic>);
+  /// POST vers l'API d'authentification avec réveil du serveur endormi
+  /// (Render plan gratuit : ~30-60 s à se réveiller) et UN ré-essai.
+  ///
+  /// Sans ça, la première requête expire côté téléphone alors que le serveur
+  /// est en train de démarrer — l'inscription "échoue" alors que le compte est
+  /// parfois créé côté serveur.
+  Future<Response<dynamic>> _postWithWakeRetry(
+    String path,
+    Map<String, dynamic> data,
+  ) async {
+    // Timeouts longs : le réveil Render peut dépasser la minute.
+    final options = Options(
+      connectTimeout: const Duration(seconds: 45),
+      receiveTimeout: const Duration(seconds: 75),
+      sendTimeout: const Duration(seconds: 30),
+    );
+    try {
+      return await _dio.post(path, data: data, options: options);
+    } on DioException catch (e) {
+      if (!_isWakeRetriable(e)) rethrow;
+      // Réveille le backend puis tente une seconde fois (une seule).
+      await ApiClient.instance.wake();
+      return _dio.post(path, data: data, options: options);
+    }
   }
 
-  Future<AuthSession> login({required String email, required String password}) async {
-    final response = await _dio.post('/auth/login', data: {
-      'email': email,
+  bool _isWakeRetriable(DioException e) {
+    return e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.connectionError;
+  }
+
+  Future<AuthSession> register({
+    required String displayName,
+    required String phone,
+    required String password,
+    String? email,
+  }) async {
+    try {
+      final response = await _postWithWakeRetry('/auth/register', {
+        'displayName': displayName,
+        'phone': phone,
+        if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+        'password': password,
+      });
+      return _saveSession(response.data['data'] as Map<String, dynamic>);
+    } on DioException catch (e) {
+      // 409 : le compte existait déjà — éventuellement CRÉÉ par une tentative
+      // précédente qui avait expiré côté téléphone. On se connecte simplement
+      // avec les mêmes identifiants au lieu d'afficher une erreur.
+      if (e.response?.statusCode == 409) {
+        return login(phone: phone, password: password);
+      }
+      rethrow;
+    }
+  }
+
+  Future<AuthSession> login({required String phone, required String password}) async {
+    final response = await _postWithWakeRetry('/auth/login', {
+      'phone': phone,
       'password': password,
     });
     return _saveSession(response.data['data'] as Map<String, dynamic>);
@@ -50,12 +95,12 @@ class AuthRepository {
   }
 
   Future<String> forgotPassword({required String email}) async {
-    final response = await _dio.post('/auth/forgot-password', data: {'email': email});
+    final response = await _postWithWakeRetry('/auth/forgot-password', {'email': email});
     return (response.data['data']['resetToken'] ?? '') as String;
   }
 
   Future<void> resetPassword({required String token, required String newPassword}) async {
-    await _dio.post('/auth/reset-password', data: {
+    await _postWithWakeRetry('/auth/reset-password', {
       'token': token,
       'newPassword': newPassword,
     });

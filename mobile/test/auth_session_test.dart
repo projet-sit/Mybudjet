@@ -6,6 +6,7 @@ void main() {
         'id': 'u1',
         'displayName': 'Awa',
         'email': 'awa@example.com',
+        'phone': '+22997000000',
         'currency': 'XOF',
       };
 
@@ -16,6 +17,8 @@ void main() {
     });
 
     expect(session.user.email, 'awa@example.com');
+    expect(session.user.phone, '+22997000000');
+    expect(session.user.identifier, '+22997000000');
     expect(session.accessToken, 'access-1');
     expect(session.refreshToken, 'refresh-1');
   });

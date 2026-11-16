@@ -2,24 +2,30 @@ class User {
   const User({
     required this.id,
     required this.displayName,
-    required this.email,
+    this.email,
+    this.phone,
     this.photoUrl,
     required this.currency,
-    required this.createdAt,
+    this.createdAt,
   });
 
   final String id;
   final String displayName;
-  final String email;
+  final String? email;
+  final String? phone;
   final String? photoUrl;
   final String currency;
   final DateTime? createdAt;
+
+  /// Identifiant principal à afficher (numéro de téléphone, sinon e-mail legacy).
+  String get identifier => phone ?? email ?? '';
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'] as String,
       displayName: (json['displayName'] ?? '') as String,
-      email: (json['email'] ?? '') as String,
+      email: json['email'] as String?,
+      phone: json['phone'] as String?,
       photoUrl: json['photoUrl'] as String?,
       currency: (json['currency'] ?? 'XOF') as String,
       createdAt: json['createdAt'] != null
@@ -31,7 +37,8 @@ class User {
   Map<String, dynamic> toJson() => {
         'id': id,
         'displayName': displayName,
-        'email': email,
+        if (email != null) 'email': email,
+        if (phone != null) 'phone': phone,
         if (photoUrl != null) 'photoUrl': photoUrl,
         'currency': currency,
         if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),

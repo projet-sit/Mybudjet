@@ -27,11 +27,11 @@ void main() {
 
   test('Inscription → portefeuille (solde = montant saisi, zéro donnée fictive) → isolation',
       () async {
-    final email = 'flutter_${DateTime.now().millisecondsSinceEpoch}@mybudget.app';
+    final phone = '+2299${DateTime.now().millisecondsSinceEpoch % 100000000}';
 
     final register = await dio.post('/auth/register', data: {
       'displayName': 'Utilisateur Flutter',
-      'email': email,
+      'phone': phone,
       'password': 'secret123',
     });
     final token = register.data['data']['tokens']['accessToken'] as String;

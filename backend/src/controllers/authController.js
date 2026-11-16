@@ -15,8 +15,8 @@ const parseBody = (body, fields) => {
 
 async function register(req, res, next) {
   try {
-    const { displayName, email, password } = parseBody(req.body, ['displayName', 'email', 'password']);
-    const { user, tokens } = await authService.register({ displayName, email, password });
+    const { displayName, email, phone, password } = parseBody(req.body, ['displayName', 'email', 'phone', 'password']);
+    const { user, tokens } = await authService.register({ displayName, email, phone, password });
     return success(res, { user, tokens }, 201);
   } catch (err) {
     return next(err);
@@ -25,8 +25,8 @@ async function register(req, res, next) {
 
 async function login(req, res, next) {
   try {
-    const { email, password } = parseBody(req.body, ['email', 'password']);
-    const { user, tokens } = await authService.login({ email, password });
+    const { email, phone, password } = parseBody(req.body, ['email', 'phone', 'password']);
+    const { user, tokens } = await authService.login({ email, phone, password });
     return success(res, { user, tokens });
   } catch (err) {
     return next(err);

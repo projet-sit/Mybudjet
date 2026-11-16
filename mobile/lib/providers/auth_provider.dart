@@ -71,15 +71,17 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 
   Future<void> register({
     required String displayName,
-    required String email,
+    required String phone,
     required String password,
+    String? email,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final session = await AuthRepository.instance.register(
         displayName: displayName,
-        email: email,
+        phone: phone,
         password: password,
+        email: email,
       );
       return session;
     });
@@ -88,10 +90,10 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     }
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({required String phone, required String password}) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      return AuthRepository.instance.login(email: email, password: password);
+      return AuthRepository.instance.login(phone: phone, password: password);
     });
     if (state.hasValue) {
       ref.invalidate(walletControllerProvider);
@@ -110,6 +112,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     state = const AsyncData(null);
   }
   /// Message d'erreur lisible à partir d'une AsyncError.
+  ///
+  /// Retourne une chaîne VIDE pour les échecs de connectivité (timeout,
+  /// serveur endormi, pas de réseau…) : tant que le réseau ne marche pas,
+  /// RIEN ne doit s'afficher. Les vraies erreurs (validation, e-mail déjà
+  /// utilisé, mot de passe incorrect…) gardent leur message actionnable.
   static String messageFrom(Object error) {
     if (error is DioException) {
       final data = error.response?.data;
@@ -120,28 +127,24 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.receiveTimeout:
-          return 'Délai dépassé — vérifie ta connexion';
         case DioExceptionType.sendTimeout:
-          return 'Envoi trop long — vérifie ta connexion et réessaie';
         case DioExceptionType.connectionError:
-          return 'Impossible de joindre le serveur — vérifie que l’API est démarrée et réessaie';
         case DioExceptionType.badCertificate:
-          return 'Certificat du serveur invalide — contacte le support';
-        case DioExceptionType.badResponse:
-          return 'Le serveur n’a pas pu traiter la demande — réessaie';
         case DioExceptionType.cancel:
-          return 'Demande annulée — réessaie';
+          // Connectivité : silence tant que le réseau ne fonctionne pas.
+          return '';
+        case DioExceptionType.badResponse:
+          return 'Le serveur rencontre un problème — réessaie dans un instant';
         default:
-          return 'Connexion au serveur impossible — vérifie ta connexion et réessaie';
+          // Connectivité (ou inconnue) : silence aussi.
+          return '';
       }
     }
-    if (error is FormatException) {
-      return 'Réponse du serveur invalide — vérifie que le backend est à jour';
+    if (error is FormatException || error is TypeError) {
+      // Réponse inexploitable (version incompatible) : pas de message technique.
+      return 'Réponse inattendue — réessaie dans un instant';
     }
-    if (error is TypeError) {
-      return 'Réponse du serveur inattendue — vérifie que le backend est à jour';
-    }
-    return 'Connexion impossible — réessaie dans un instant';
+    return '';
   }
 }
 

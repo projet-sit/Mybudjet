@@ -5,6 +5,7 @@ function toPublicUser(row) {
     id: row.id,
     displayName: row.display_name,
     email: row.email,
+    phone: row.phone,
     photoUrl: row.photo_url,
     currency: row.currency,
     createdAt: row.created_at,
@@ -16,17 +17,31 @@ async function findByEmail(email) {
   return rows[0] || null;
 }
 
+async function findByPhone(phone) {
+  const { rows } = await query('SELECT * FROM users WHERE phone = $1 LIMIT 1', [phone]);
+  return rows[0] || null;
+}
+
+/// Recherche par identifiant de connexion (téléphone, ou e-mail pour les anciens comptes).
+async function findByIdentifier(identifier) {
+  const { rows } = await query(
+    'SELECT * FROM users WHERE phone = $1 OR email = LOWER($1) LIMIT 1',
+    [identifier]
+  );
+  return rows[0] || null;
+}
+
 async function findById(id) {
   const { rows } = await query('SELECT * FROM users WHERE id = $1 LIMIT 1', [id]);
   return rows[0] || null;
 }
 
-async function create({ displayName, email, passwordHash }) {
+async function create({ displayName, email, phone, passwordHash }) {
   const { rows } = await query(
-    `INSERT INTO users (display_name, email, password_hash)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (display_name, email, phone, password_hash)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [displayName, email, passwordHash]
+    [displayName, email || null, phone || null, passwordHash]
   );
   return toPublicUser(rows[0]);
 }
@@ -51,4 +66,4 @@ async function updateFields(userId, fields) {  const keys = Object.keys(fields);
   return rows[0] || null;
 }
 
-module.exports = { toPublicUser, findByEmail, findById, create, updatePassword, updateFields, deleteById };
+module.exports = { toPublicUser, findByEmail, findByPhone, findByIdentifier, findById, create, updatePassword, updateFields, deleteById };

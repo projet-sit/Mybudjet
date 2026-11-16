@@ -262,7 +262,7 @@ void main() {
           user: const User(
             id: 'u1',
             displayName: 'Ulrich',
-            email: 'u@example.com',
+            phone: '+22997000000',
             currency: 'XOF',
             createdAt: null,
           ),

@@ -1,4 +1,3 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,34 +21,31 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emailOptionalController = TextEditingController();
   final _passwordController = TextEditingController();
 
   late AuthMode _mode = widget.initialMode;
+  _Country _country = _defaultCountry;
   bool _obscure = true;
   bool _acceptedCgu = false;
-  bool _offline = false;
   AuthMode? _errorMode; // mode dans lequel l'erreur courante est survenue
 
   bool get _isRegister => _mode == AuthMode.register;
 
   @override
-  void initState() {
-    super.initState();
-    _checkConnectivity();
-  }
-
-  Future<void> _checkConnectivity() async {
-    final results = await Connectivity().checkConnectivity();
-    final offline = results.every((r) => r == ConnectivityResult.none);
-    if (mounted) setState(() => _offline = offline);
-  }
-  @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
+    _phoneController.dispose();
+    _emailOptionalController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// Numéro international complet : `+<indicatif><numéro national>`.
+  String _fullPhone() {
+    final national = _phoneController.text.trim().replaceAll(RegExp(r'\s+'), '');
+    return '${_country.dialCode}$national';
   }
 
   Future<void> _submit() async {
@@ -61,14 +57,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _errorMode = _mode);
     if (_isRegister) {
+      final email = _emailOptionalController.text.trim();
       await ref.read(authControllerProvider.notifier).register(
             displayName: _nameController.text.trim(),
-            email: _emailController.text.trim(),
+            phone: _fullPhone(),
             password: _passwordController.text,
+            email: email.isEmpty ? null : email,
           );
     } else {
       await ref.read(authControllerProvider.notifier).login(
-            email: _emailController.text.trim(),
+            phone: _fullPhone(),
             password: _passwordController.text,
           );
     }
@@ -92,12 +90,67 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) return 'E-mail requis';
-    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim())) {
+  String? _validatePhone(String? value) {
+    final digits = (value ?? '').replaceAll(RegExp(r'\s+'), '');
+    if (digits.isEmpty) return 'Numéro de téléphone requis';
+    if (!RegExp(r'^[0-9]{8,14}$').hasMatch(digits)) {
+      return 'Numéro invalide (8 à 14 chiffres)';
+    }
+    return null;
+  }
+
+  String? _validateOptionalEmail(String? value) {
+    final text = (value ?? '').trim();
+    if (text.isEmpty) return null; // facultatif : e-mail uniquement pour la récupération
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(text)) {
       return 'Adresse e-mail invalide';
     }
     return null;
+  }
+
+  Future<void> _pickCountry(BuildContext context) async {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = await showModalBottomSheet<_Country>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: Text(
+                'Choisis ton pays',
+                style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+            for (final country in _francophoneCountries)
+              ListTile(
+                leading: Text(country.flag, style: const TextStyle(fontSize: 24)),
+                title: Text(country.name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(country.dialCode, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    if (country.iso == _country.iso) ...[
+                      const SizedBox(width: 8),
+                      Icon(Icons.check_circle, color: scheme.primary),
+                    ],
+                  ],
+                ),
+                selected: country.iso == _country.iso,
+                onTap: () => Navigator.of(sheetContext).pop(country),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) setState(() => _country = selected);
   }
 
   @override
@@ -105,9 +158,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final scheme = Theme.of(context).colorScheme;
     final authState = ref.watch(authControllerProvider);
     final loading = authState.isLoading;
-    final error = authState.hasError && _errorMode == _mode
+    // Chaîne vide = échec de connectivité → on reste silencieux (rien n'est affiché).
+    final rawError = authState.hasError && _errorMode == _mode
         ? AuthController.messageFrom(authState.error!)
         : null;
+    final error = (rawError == null || rawError.isEmpty) ? null : rawError;
 
     return Scaffold(
       body: SafeArea(
@@ -180,32 +235,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (_offline) ...[
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: scheme.error.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    _isRegister
-                                        ? 'Connectez-vous à internet pour créer votre compte'
-                                        : 'Connectez-vous à internet pour vous connecter',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: scheme.error, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  FilledButton(
-                                    onPressed: _checkConnectivity,
-                                    child: const Text('Réessayer'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
                           Container(
                             padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
@@ -256,23 +285,72 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               ),
                               const SizedBox(height: 14),
                             ],
-                            TextFormField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              autofocus: !_isRegister,
-                              autofillHints: _isRegister
-                                  ? const [AutofillHints.newUsername]
-                                  : const [AutofillHints.email],
-                              textInputAction: TextInputAction.next,
-                              autocorrect: false,
-                              style: const TextStyle(fontSize: 15),
-                              decoration: const InputDecoration(
-                                hintText: 'E-mail',
-                                prefixIcon: Icon(Icons.email_outlined),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                              ),
-                              validator: _validateEmail,
+                            Row(
+                              children: [
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => _pickCountry(context),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 17),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surface,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: scheme.outline),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(_country.flag, style: const TextStyle(fontSize: 20)),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _country.dialCode,
+                                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        const Icon(Icons.keyboard_arrow_down, size: 20),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _phoneController,
+                                    keyboardType: TextInputType.phone,
+                                    autofocus: !_isRegister,
+                                    autofillHints: const [AutofillHints.telephoneNumber],
+                                    textInputAction: TextInputAction.next,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    autocorrect: false,
+                                    style: const TextStyle(fontSize: 15),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Numéro de téléphone',
+                                      prefixIcon: Icon(Icons.phone_outlined),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                    ),
+                                    validator: _validatePhone,
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (_isRegister) ...[
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _emailOptionalController,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: const [AutofillHints.email],
+                                textInputAction: TextInputAction.next,
+                                autocorrect: false,
+                                style: const TextStyle(fontSize: 15),
+                                decoration: const InputDecoration(
+                                  hintText: 'E-mail (facultatif)',
+                                  helperText: 'Sert uniquement à récupérer ton mot de passe',
+                                  prefixIcon: Icon(Icons.email_outlined),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                ),
+                                validator: _validateOptionalEmail,
+                              ),
+                            ],
                             const SizedBox(height: 14),
                             TextFormField(
                               controller: _passwordController,
@@ -450,3 +528,43 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     );
   }
 }
+
+/// Pays proposés pour l'indicatif téléphonique (Afrique francophone + France,
+/// plus Belgique / Suisse / Canada pour la diaspora).
+class _Country {
+  const _Country(this.iso, this.name, this.dialCode, this.flag);
+
+  final String iso;
+  final String name;
+  final String dialCode;
+  final String flag;
+}
+
+const _defaultCountry = _Country('BJ', 'Bénin', '+229', '🇧🇯');
+
+const List<_Country> _francophoneCountries = [
+  _defaultCountry,
+  _Country('BF', 'Burkina Faso', '+226', '🇧🇫'),
+  _Country('CM', 'Cameroun', '+237', '🇨🇲'),
+  _Country('CF', 'Centrafrique', '+236', '🇨🇫'),
+  _Country('CI', "Côte d'Ivoire", '+225', '🇨🇮'),
+  _Country('GA', 'Gabon', '+241', '🇬🇦'),
+  _Country('GH', 'Ghana', '+233', '🇬🇭'),
+  _Country('GN', 'Guinée', '+224', '🇬🇳'),
+  _Country('ML', 'Mali', '+223', '🇲🇱'),
+  _Country('NE', 'Niger', '+227', '🇳🇪'),
+  _Country('NG', 'Nigeria', '+234', '🇳🇬'),
+  _Country('CG', 'Congo', '+242', '🇨🇬'),
+  _Country('CD', 'RD Congo', '+243', '🇨🇩'),
+  _Country('SN', 'Sénégal', '+221', '🇸🇳'),
+  _Country('TD', 'Tchad', '+235', '🇹🇩'),
+  _Country('TG', 'Togo', '+228', '🇹🇬'),
+  _Country('MA', 'Maroc', '+212', '🇲🇦'),
+  _Country('DZ', 'Algérie', '+213', '🇩🇿'),
+  _Country('TN', 'Tunisie', '+216', '🇹🇳'),
+  _Country('FR', 'France', '+33', '🇫🇷'),
+  _Country('BE', 'Belgique', '+32', '🇧🇪'),
+  _Country('CH', 'Suisse', '+41', '🇨🇭'),
+  _Country('CA', 'Canada', '+1', '🇨🇦'),
+  _Country('LU', 'Luxembourg', '+352', '🇱🇺'),
+];

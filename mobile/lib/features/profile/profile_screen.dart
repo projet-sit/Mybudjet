@@ -104,7 +104,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                     ),
                     Text(
-                      user?.email ?? '',
+                      user?.identifier ?? '',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

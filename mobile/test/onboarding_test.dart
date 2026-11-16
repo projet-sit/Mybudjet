@@ -354,6 +354,47 @@ void main() {
       expect(container.read(onboardingSeenProvider), isTrue);
     });
 
+    testWidgets('création de compte → directement sur l’accueil (sans devoir se reconnecter)', (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          onboardingSeenProvider.overrideWith(() => OnboardingSeenNotifier(true)),
+          authControllerProvider.overrideWith(() => _FakeAuthController(null)),
+          walletControllerProvider.overrideWith(() => _FakeWalletController(fakeWallet())),
+          dashboardControllerProvider.overrideWith(() => _FakeDashboardController()),
+          transactionsProvider.overrideWith(() => _FakeTransactionsController()),
+          budgetsControllerProvider.overrideWith(() => _FakeBudgetsController()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await pumpApp(tester, container);
+
+      // On démarre sur la connexion (non connecté) : bascule sur Inscription.
+      expect(find.text('Se connecter'), findsWidgets);
+      await tester.ensureVisible(find.text('Créer un compte'));
+      await tester.tap(find.text('Créer un compte'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      expect(find.text('Créer mon compte'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const ValueKey('auth_name_field')), 'Ulrich');
+      await tester.enterText(find.byKey(const ValueKey('auth_phone_field')), '97000000');
+      await tester.enterText(find.byKey(const ValueKey('auth_password_field')), 'secret123');
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.ensureVisible(find.text('Créer mon compte'));
+      await tester.tap(find.text('Créer mon compte'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      // Directement sur l'accueil — aucun passage par l'écran de connexion.
+      expect(find.text('Reste'), findsOneWidget);
+      expect(find.text('Portefeuille Test'), findsOneWidget);
+      expect(find.text('Se connecter'), findsNothing);
+    });
     testWidgets('déconnecté et onboarding vu → directement la connexion', (tester) async {
       final container = ProviderContainer(
         overrides: [
@@ -389,6 +430,31 @@ class _FakeAuthController extends AuthController {
 
   @override
   FutureOr<AuthSession?> build() async => session;
+
+  @override
+  Future<void> register({
+    required String displayName,
+    required String phone,
+    required String password,
+    String? email,
+  }) async {
+    // Simule une inscription réussie : l'état bascule sur la session créée.
+    state = const AsyncLoading();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    state = AsyncData(
+      AuthSession(
+        user: const User(
+          id: 'u1',
+          displayName: 'Ulrich',
+          phone: '+22997000000',
+          currency: 'XOF',
+          createdAt: null,
+        ),
+        accessToken: 'access-test',
+        refreshToken: 'refresh-test',
+      ),
+    );
+  }
 }
 
 class _FakeWalletController extends WalletController {

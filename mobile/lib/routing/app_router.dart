@@ -15,20 +15,32 @@ import '../providers/auth_provider.dart';
 import '../providers/onboarding_provider.dart';
 import 'app_redirect.dart';
 
+/// Notifie le routeur des changements d'auth/onboarding sans recréer GoRouter
+/// (un seul routeur, une seule pile de navigation — jamais de redirection
+/// perdue à la fin d'une inscription).
+class _RouterTransitionNotifier extends ChangeNotifier {
+  _RouterTransitionNotifier(Ref ref) {
+    ref.listen(authControllerProvider, (_, _) => notifyListeners());
+    ref.listen(onboardingSeenProvider, (_, _) => notifyListeners());
+  }
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authControllerProvider);
+  final transition = _RouterTransitionNotifier(ref);
+  ref.onDispose(transition.dispose);
 
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: false,
+    refreshListenable: transition,
     redirect: (context, state) {
       // Lu à CHAQUE redirection : la valeur peut changer en cours de session
-      // (l'utilisateur vient de terminer l'onboarding).
-      final onboardingSeen = ref.read(onboardingSeenProvider);
+      // (l'utilisateur vient de terminer l'onboarding ou de créer son compte).
+      final auth = ref.read(authControllerProvider);
       return appRedirect(
-        onboardingSeen: onboardingSeen,
-        authLoading: authState.isLoading,
-        loggedIn: authState.value != null,
+        onboardingSeen: ref.read(onboardingSeenProvider),
+        authLoading: auth.isLoading,
+        loggedIn: auth.value != null,
         location: state.matchedLocation,
       );
     },

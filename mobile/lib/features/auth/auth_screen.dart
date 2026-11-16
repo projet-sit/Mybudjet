@@ -43,8 +43,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   /// Numéro international complet : `+<indicatif><numéro national>`.
+  /// Un « 0 » initial est ignoré (format national, ex. 06… en France → +33 6…).
   String _fullPhone() {
-    final national = _phoneController.text.trim().replaceAll(RegExp(r'\s+'), '');
+    final national = _phoneController.text
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
     return '${_country.dialCode}$national';
   }
 
@@ -264,6 +268,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           children: [
                             if (_isRegister) ...[
                               TextFormField(
+                                key: const ValueKey('auth_name_field'),
                                 controller: _nameController,
                                 textCapitalization: TextCapitalization.words,
                                 autofocus: true,
@@ -315,6 +320,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: TextFormField(
+                                    key: const ValueKey('auth_phone_field'),
                                     controller: _phoneController,
                                     keyboardType: TextInputType.phone,
                                     autofocus: !_isRegister,
@@ -353,6 +359,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             ],
                             const SizedBox(height: 14),
                             TextFormField(
+                              key: const ValueKey('auth_password_field'),
                               controller: _passwordController,
                               obscureText: _obscure,
                               enableSuggestions: false,

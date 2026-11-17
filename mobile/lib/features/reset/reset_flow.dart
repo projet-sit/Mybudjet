@@ -7,6 +7,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/profile_photo_provider.dart';
 import '../../services/auth_repository.dart';
 import '../../models/user.dart';
 import '../../services/cache_service.dart';
@@ -53,9 +54,10 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
   // contrôleur pour éviter une détection de changement fantôme.
   ref.read(authControllerProvider.notifier).setSession(session);
 
-  // Étape locale : on vide tout (cache + file d'attente), puis on revalide.
+  // Étape locale : on vide tout (cache + file d'attente + photo locale), puis on revalide.
   await CacheService.instance.clearAllCaches();
   await Outbox.instance.clearAll();
+  await ref.read(profilePhotoProvider.notifier).clear();
   ref.invalidate(walletControllerProvider);
   ref.invalidate(dashboardControllerProvider);
   ref.invalidate(transactionsProvider);

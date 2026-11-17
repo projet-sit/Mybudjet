@@ -36,6 +36,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   bool _savingCategory = false;
   final _customNameController = TextEditingController();
   final _customFocus = FocusNode();
+  final _noteController = TextEditingController();
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
       _amount = '${tx.amount}';
       _category = tx.category;
       _categoryId = tx.categoryId;
+      _noteController.text = tx.description ?? '';
     }
   }
 
@@ -53,6 +55,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   void dispose() {
     _customNameController.dispose();
     _customFocus.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
@@ -190,7 +193,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         amount: amount,
         category: _category,
         categoryId: _categoryId ?? widget.editing?.categoryId,
-        description: widget.editing?.description,
+        description: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
         date: widget.editing?.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now()),
         time: widget.editing?.time ?? DateFormat('HH:mm').format(DateTime.now()),
         paymentMethod: _mode == 'expense' ? (widget.editing?.paymentMethod ?? 'Espèces') : null,
@@ -286,6 +289,35 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                   ],
                 ),
                 textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              // Champ libre « dans quoi as-tu dépensé ? » (note de l'opération).
+              // Utile quand aucune catégorie ne correspond exactement. Reste
+              // facultatif ; s'affiche dans la liste pour la retrouver vite.
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: fieldBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: scheme.outline),
+                ),
+                child: TextField(
+                  controller: _noteController,
+                  maxLength: 200,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    counterText: '',
+                    hintText: _mode == 'expense'
+                        ? 'Dans quoi as-tu dépensé ? (facultatif)'
+                        : 'D’où vient cet argent ? (facultatif)',
+                    prefixIcon: Icon(Icons.edit_note_outlined, size: 18, color: scheme.onSurfaceVariant),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 0),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               SizedBox(

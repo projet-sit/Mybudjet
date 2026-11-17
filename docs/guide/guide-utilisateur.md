@@ -36,6 +36,7 @@ MyBudget est une app gratuite pour garder la main sur ton argent. Tu y notes ce 
 4. Valide. Tu es connecté directement.
 
 > À la prochaine ouverture, tu retrouveras ton compte tel quel. Pour changer de mot de passe : écran de connexion → « Mot de passe oublié ».
+> Profil : touche ton avatar tout en haut pour choisir une photo (galerie ou appareil photo) ; « Retirer la photo » pour revenir à l'initiale. Elle reste sur ton téléphone.
 
 ## 3. Créer ton portefeuille
 
@@ -54,6 +55,7 @@ C'est ton compte principal. Tu peux le modifier plus tard depuis Profil.
 2. Choisis **Dépense**.
 3. Saisis le montant (ex. 2 500) et la catégorie (ex. Transport).
    - Si la catégorie n'existe pas, touche **Autres** : un champ « Nom de la catégorie » apparaît ; écris-la (ex. Coiffure) et touche **Valider**. Elle est gardée pour la prochaine fois.
+   - Tu peux aussi écrire librement **dans quoi as-tu dépensé** dans le champ « Note (facultatif) » : c'est enregistré avec l'opération et affiché dans la liste.
 4. Vérifie la date (aujourd'hui par défaut) et le mode de paiement.
 5. Ajoute une note si tu veux (ex. « moto-taxi »), puis **Valider**.
 

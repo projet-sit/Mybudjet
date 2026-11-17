@@ -9,6 +9,7 @@ import '../services/cache_service.dart';
 import '../services/outbox.dart';
 import 'category_provider.dart';
 import 'epoch_reset_provider.dart';
+import 'profile_photo_provider.dart';
 import 'transaction_provider.dart';
 import 'sync_provider.dart';
 import 'wallet_provider.dart';
@@ -34,6 +35,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       if (user.dataEpoch != session.user.dataEpoch) {
         await CacheService.instance.clearAllCaches();
         await Outbox.instance.clearAll();
+        await ref.read(profilePhotoProvider.notifier).clear();
         ref.invalidate(walletControllerProvider);
         ref.invalidate(transactionsProvider);
         ref.invalidate(dashboardControllerProvider);

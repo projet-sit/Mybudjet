@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
 import '../../providers/app_prefs_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/profile_photo_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/cache_service.dart';
 import '../../services/outbox.dart';
@@ -67,6 +72,73 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     await ref.read(alertsEnabledProvider.notifier).setEnabled(value);
   }
 
+  Future<void> _pickPhoto(BuildContext context, ImageSource source) async {
+    try {
+      // Android : la caméra est une permission dangereuse → demande à chaud.
+      if (source == ImageSource.camera) {
+        final status = await Permission.camera.request();
+        if (!status.isGranted) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Caméra non autorisée. Autorise-la dans les réglages Android.')),
+          );
+          return;
+        }
+      }
+      await ref.read(profilePhotoProvider.notifier).setFromPick(source);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Photo impossible. Vérifie les autorisations de la galerie/caméra.')),
+      );
+    }
+  }
+
+  Future<void> _removePhoto() async {
+    await ref.read(profilePhotoProvider.notifier).clear();
+  }
+
+  Future<void> _showPhotoOptions() async {
+    final hasPhoto = ref.read(profilePhotoProvider).value != null;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _pickPhoto(context, ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Prendre une photo'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _pickPhoto(context, ImageSource.camera);
+              },
+            ),
+            if (hasPhoto)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Retirer la photo'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _removePhoto();
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -74,6 +146,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final wallet = ref.watch(walletControllerProvider).value;
     final isDark = (ref.watch(themeControllerProvider).value ?? ThemeMode.light) == ThemeMode.dark;
     final alerts = ref.watch(alertsEnabledProvider).value ?? true;
+    final photoPath = ref.watch(profilePhotoProvider).value;
     final initial = (user?.displayName.trim().isNotEmpty ?? false)
         ? user!.displayName.trim()[0].toUpperCase()
         : 'M';
@@ -90,23 +163,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Container(
-                width: 60,
-                height: 60,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.deepGreenLight, AppColors.deepGreen],
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  initial,
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800),
+            Semantics(
+              label: 'Photo de profil – toucher pour changer',
+              button: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(34),
+                onTap: _showPhotoOptions,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppColors.deepGreenLight, AppColors.deepGreen],
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: photoPath != null
+                          ? ClipOval(
+                              child: Image.file(
+                                File(photoPath),
+                                width: 68,
+                                height: 68,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Text(
+                                  initial,
+                                  style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            )
+                          : Text(
+                              initial,
+                              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                            ),
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: scheme.surface,
+                          border: Border.all(color: scheme.outline),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.photo_camera, size: 13, color: Colors.black87),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

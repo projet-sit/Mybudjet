@@ -10,12 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/app_prefs_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/epoch_reset_provider.dart';
 import 'providers/onboarding_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/transaction_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'routing/app_router.dart';
 import 'services/api_client.dart';
+import 'services/budget_alerts_service.dart';
 import 'services/error_reporter.dart';
 import 'services/outbox.dart';
 
@@ -35,6 +37,8 @@ Future<void> _bootstrap() async {
   final onboardingSeen = prefs.getBool(OnboardingSeenNotifier.key) ?? false;
   // Réveil discret du backend (plan gratuit : il dort après inactivité).
   ApiClient.instance.wake();
+  // Plugin de notifications locales (alertes de budget).
+  await BudgetAlertsService.instance.initialize();
   runApp(
     ProviderScope(
       overrides: [
@@ -103,6 +107,14 @@ class _MyAppState extends ConsumerState<MyApp> {
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeControllerProvider).value ?? ThemeMode.light;
+
+    // Un autre appareil (ou cette remise à zéro) a effacé les données côté serveur :
+    // on renvoie l'utilisateur vers la création du premier portefeuille.
+    ref.listen<int>(epochResetProvider, (previous, next) {
+      if (next != previous && next > 0) {
+        router.go('/wallet-setup');
+      }
+    });
 
     return MaterialApp.router(
       title: 'MyBudget',      debugShowCheckedModeBanner: false,

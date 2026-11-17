@@ -9,14 +9,16 @@
 3. [Créer ton portefeuille](#3-créer-ton-portefeuille)
 4. [Noter une dépense](#4-noter-une-dépense)
 5. [Noter un revenu](#5-noter-un-revenu)
-6. [Ton écran d'accueil et ton « Reste »](#6-ton-écran-daccueil-et-ton-reste)7. [Tes budgets par catégorie](#7-tes-budgets-par-catégorie)
+6. [Ton écran d'accueil et ton Reste](#6-ton-écran-daccueil-et-ton-reste)
+7. [Tes budgets par catégorie](#7-tes-budgets-par-catégorie)
 8. [Ton épargne](#8-ton-épargne)
 9. [Retrouver une opération (recherche)](#9-retrouver-une-opération-recherche)
-10. [Réinitialiser ton mois](#10-réinitialiser-ton-mois)
-11. [Sans internet](#11-sans-internet)
-12. [Ta sécurité](#12-ta-sécurité)
-13. [Supprimer ton compte](#13-supprimer-ton-compte)
-14. [Aide et FAQ dans l'app](#14-aide-et-faq-dans-lapp)
+10. [Mes catégories](#10-mes-catégories)
+11. [Réinitialiser ton compte](#11-réinitialiser-ton-compte)
+12. [Sans internet](#12-sans-internet)
+13. [Ta sécurité](#13-ta-sécurité)
+14. [Supprimer ton compte](#14-supprimer-ton-compte)
+15. [Aide et FAQ dans l'app](#15-aide-et-faq-dans-lapp)
 
 ---
 
@@ -51,6 +53,7 @@ C'est ton compte principal. Tu peux le modifier plus tard depuis Profil.
 1. Sur l'accueil, touche le bouton **+** en bas.
 2. Choisis **Dépense**.
 3. Saisis le montant (ex. 2 500) et la catégorie (ex. Transport).
+   - Si la catégorie n'existe pas, touche **Autres** : un champ « Nom de la catégorie » apparaît ; écris-la (ex. Coiffure) et touche **Valider**. Elle est gardée pour la prochaine fois.
 4. Vérifie la date (aujourd'hui par défaut) et le mode de paiement.
 5. Ajoute une note si tu veux (ex. « moto-taxi »), puis **Valider**.
 
@@ -105,30 +108,40 @@ Dans **Opérations**, la barre de recherche retrouve tout ton historique : un mo
 
 [Capture : recherche d'opérations]
 
-## 10. Réinitialiser ton mois
+## 10. Mes catégories
 
-Profil → **Réinitialiser tout à 0** (double confirmation).
+1. Profil → **Mes catégories**.
+2. Touche **Modifier** pour renommer, ou **Supprimer** pour effacer une catégorie personnalisée.
+3. La suppression ne perd jamais tes opérations : elles passent en **Autres**.
+4. Si un budget y est lié, MyBudget te demande une confirmation ; ce budget sera supprimé aussi.
 
-- Le mois est clôturé et **archivé** : ton historique est gardé.
-- Ton épargne est conservée par défaut (tu peux demander de tout remettre à 0).
-- Si tu changes d'avis dans les **10 secondes**, touche **Annuler**.
+Toutes tes catégories personnalisées (par exemple Coiffure) apparaissent dans les sélecteurs, entre les catégories par défaut et « Autres ».
 
-[Capture : boîte de dialogue de réinitialisation]
+## 11. Réinitialiser ton compte
 
-## 11. Sans internet
+Profil → **Réinitialiser tout**.
+
+- Tout sera supprimé définitivement : portefeuille, opérations, budgets, épargne et son historique, objectifs, périodes archivées, catégories personnalisées.
+- Ton compte (ton numéro, ton e-mail, ton mot de passe) est **conservé** — tu restes connecté.
+- Le bouton n'est actif que si tu tapes **REINITIALISER**.
+- Tu peux **Télécharger une copie (CSV)** avant de valider.
+- La connexion est nécessaire : hors-ligne, la réinitialisation est refusée avec « Connexion requise pour réinitialiser ».
+
+## 12. Sans internet
 
 Tu peux noter tes opérations **même sans réseau** : elles sont gardées sur ton téléphone et envoyées automatiquement dès que ton téléphone retrouve Internet. Le badge en haut indique « Synchronisé », « En attente » ou « Hors-ligne ».
 
 > Astuce : un avion, le métro, la campagne — MyBudget marche partout.
 
-## 12. Ta sécurité
+## 13. Ta sécurité
 
 - Ton mot de passe est chiffré et ne sort jamais de nos serveurs en clair.
 - Tes données t'appartiennent : personnelles, jamais vendues, jamais utilisées pour la publicité.
+- Désactive **Alertes de budget** dans le profil si tu ne veux pas de notifications locales (elles ne lisent jamais tes autres apps).
 - Déconnecte-toi sur les téléphones partagés (Profil → Se déconnecter).
 - Sur le nouveau téléphone : installe MyBudget, connecte-toi avec ton numéro et ton mot de passe — tout revient.
 
-## 13. Supprimer ton compte
+## 14. Supprimer ton compte
 
 Profil → **Supprimer mes données**. Un avertissement demande confirmation forte.
 
@@ -138,7 +151,7 @@ Profil → **Supprimer mes données**. Un avertissement demande confirmation for
 
 [Capture : boîte de dialogue de suppression du compte]
 
-## 14. Aide et FAQ dans l'app
+## 15. Aide et FAQ dans l'app
 
 Profil → **Aide et FAQ** : les 15 questions les plus fréquentes, en accordéon, disponibles même sans réseau.
 

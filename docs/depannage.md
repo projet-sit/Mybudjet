@@ -59,6 +59,9 @@ Remove-Item -Recurse -Force .dart_tool ; flutter pub get
 | App très lente au premier démarrage | cold start Render (plan gratuit) | normal ; l'app le réveille discrètement |
 | « Application non installée » | conflit de signature avec l'ancienne APK | désinstaller l'ancienne, puis installer |
 | Crash au lancement sur Android 13+ | permissions restreintes (rare) | MyBudget n'utilise **pas** de service d'écoute de notifications ; vérifier la version de l'APK et les logs via `POST /client-errors` |
+| Catégorie personnalisée invisible après synchro | la fusion exige une récupération complète (déconnexion/reconnexion ou redémarrage) | rouvrir l'app ; la réconciliation se fait au prochain démarrage |
+| Notifications de budget absentes | interrupteur coupé ou permission Android refusée | Profil → Alertes de budget → activer et autoriser les notifications |
+| « Connexion requise pour réinitialiser » | hors-ligne au moment du reset | se connecter à Internet et réessayer |
 | Dépenses qui n'apparaissent pas après saisie hors-ligne | outbox pas encore rejouée | rouvrir le réseau, rouvrir l'écran ; vérifier le badge de synchro |
 | Mot de passe oublié n'arrive pas | aucun fournisseur e-mail n'est intégré ; en dev le jeton est logué côté serveur | contact support [À REMPLIR] |
 

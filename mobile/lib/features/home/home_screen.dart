@@ -534,7 +534,7 @@ class _BudgetCard extends ConsumerWidget {
                       itemBuilder: (context) => const [
                         PopupMenuItem(
                           value: 'reset',
-                          child: Text('Réinitialiser tout à 0'),
+                          child: Text('Réinitialiser tout'),
                         ),
                       ],
                     ),

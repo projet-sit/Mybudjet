@@ -35,17 +35,23 @@ function validateTransactionBody(body, { partial = false, current = null } = {})
 
   const type = out.type || current?.type || 'expense';
 
-  // Catégorie (whitelist selon le type)
-  if (body.category !== undefined || !partial) {
-    const category = String(body.category || '').trim();
-    const allowed = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
-    if (!allowed.includes(category)) {
-      throw ApiError.validation(
-        `Catégorie invalide pour ${type === 'expense' ? 'une dépense' : 'un revenu'}`,
-        { field: 'category', allowed }
-      );
+  // Catégorie : soit `categoryId` (UUID, gagne), soit `category` (nom trimé ≤ 30 car. ;
+  // l'existence et l'appartenance sont vérifiées en base par le service).
+  if (body.categoryId !== undefined || body.category !== undefined || !partial) {
+    if (body.categoryId !== undefined && body.categoryId !== null) {
+      const categoryId = String(body.categoryId);
+      if (!/^[0-9a-f-]{36}$/i.test(categoryId)) {
+        throw ApiError.validation('Identifiant de catégorie invalide', { field: 'categoryId' });
+      }
+      out.categoryId = categoryId;
     }
-    out.category = category;
+    if (body.category !== undefined || !partial) {
+      const category = body.category === undefined ? null : String(body.category || '').trim();
+      if (!out.categoryId && (!category || category.length < 1 || category.length > 30)) {
+        throw ApiError.validation('Catégorie : 1 à 30 caractères', { field: 'category' });
+      }
+      out.category = category;
+    }
   }
 
   // Description (optionnelle)

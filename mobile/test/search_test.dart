@@ -156,4 +156,16 @@ void main() {
     expect(searchTransactions(list, ''), hasLength(2));
     expect(searchTransactions(list, '   '), hasLength(2));
   });
+
+  group('catégories personnalisées', () {
+    test('la recherche trouve une opération dont la catégorie est personnalisée', () {
+      final list = [
+        _tx(id: '1', category: 'Coiffure', description: 'Salon'),
+        _tx(id: '2', category: 'Transport'),
+      ];
+      expect(searchTransactions(list, 'coiffure'), hasLength(1));
+      expect(searchTransactions(list, 'COIFFURE'), hasLength(1));
+      expect(searchTransactions(list, 'coif'), hasLength(1));
+    });
+  });
 }

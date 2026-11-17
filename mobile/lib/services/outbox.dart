@@ -7,8 +7,10 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dashboard.dart';
 import '../models/transaction.dart';
+import '../models/category.dart';
 import 'api_client.dart';
 import 'cache_service.dart';
+import 'category_repository.dart';
 import 'data_repository.dart';
 
 /// File d'attente persistante des écritures faites hors-ligne ou lorsque le
@@ -29,7 +31,7 @@ abstract final class OutboxKind {
   static const savingsWithdrawAll = 'savings_withdraw_all';
   static const budgetUpsert = 'budget_upsert';
   static const budgetDelete = 'budget_delete';
-  static const resetAll = 'reset_all';
+  static const categoryCreate = 'category_create';
 }
 
 class OutboxOp {
@@ -100,7 +102,6 @@ class Outbox {
   static const _pendingTxKey = 'outbox_pending_transactions';
   static const _deletedIdsKey = 'outbox_deleted_transaction_ids';
   static const _updatedTxKey = 'outbox_updated_transactions';
-  static const _hiddenBeforeKey = 'outbox_hidden_before';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -236,39 +237,20 @@ class Outbox {
   }
 
   /// Point de coupure local : les opérations créées après ce marqueur
-  /// restent affichées ; tout ce qui précède est masqué (remise à zéro).
-  Future<DateTime?> hiddenBefore() async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_hiddenBeforeKey);
-    return raw == null ? null : DateTime.tryParse(raw);
-  }
-
-  Future<void> _setHiddenBefore(DateTime? value) async {
-    final prefs = await _prefs;
-    if (value == null) {
-      await prefs.remove(_hiddenBeforeKey);
-    } else {
-      await prefs.setString(_hiddenBeforeKey, value.toIso8601String());
-    }
-  }
-
-  /// Applique l'overlay (pending + supprimées + masquées après remise à zéro)
-  /// sur une liste de transactions (issue du réseau ou du cache).
+  /// Applique l'overlay (pending + supprimées) sur une liste de transactions
+  /// (issue du réseau ou du cache).
   Future<List<Transaction>> applyOverlay(List<Transaction> base) async {
     final pending = await pendingTransactions();
     final deleted = await deletedTransactionIds();
     final updates = await updatedTransactions();
-    final cutoff = await hiddenBefore();
 
     final merged = <String, Transaction>{};
     for (final tx in base) {
       if (deleted.contains(tx.id)) continue;
-      if (cutoff != null && _createdAtOf(tx).isBefore(cutoff)) continue;
       merged[tx.id] = updates[tx.id] ?? tx;
     }
     for (final tx in pending) {
       if (deleted.contains(tx.id)) continue;
-      if (cutoff != null && _createdAtOf(tx).isBefore(cutoff)) continue;
       merged[tx.id] = updates[tx.id] ?? tx;
     }
     final result = merged.values.toList()
@@ -278,76 +260,6 @@ class Outbox {
         return b.time.compareTo(a.time);
       });
     return result;
-  }
-
-  DateTime _createdAtOf(Transaction tx) {
-    final d = DateTime.tryParse('${tx.date}T${tx.time.isEmpty ? '00:00' : tx.time}:00');
-    return d ?? DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
-  /// Sauvegarde locale des données avant une remise à zéro optimiste.
-  /// Permet d'annuler instantanément hors-ligne (dans les 10 s).
-  Future<void> createResetBackup(String walletId) async {
-    final prefs = await _prefs;
-    Future<String?> read(String key) async => prefs.getString(key);
-    final backup = <String, String?>{
-      'wallet': await read('cache_wallet'),
-      'dashboard': await read('cache_dashboard_$walletId'),
-      'transactions': await read('cache_txs_$walletId'),
-      'budgets': await read('cache_budgets_$walletId'),
-      'hidden_before': await read('outbox_hidden_before'),
-      'takenAt': DateTime.now().toIso8601String(),
-    };
-    await prefs.setString('reset_backup_$walletId', jsonEncode(backup));
-  }
-
-  /// Restaure la sauvegarde locale et retire l'opération de remise à zéro
-  /// en attente (elle n'a peut-être jamais atteint le serveur).
-  /// Retourne true si la restauration a eu lieu.
-  Future<bool> restoreResetBackup(String walletId) async {
-    final prefs = await _prefs;
-    final raw = prefs.getString('reset_backup_$walletId');
-    if (raw == null) return false;
-    Map<String, dynamic> backup;
-    try {
-      backup = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-    } catch (_) {
-      return false;
-    }
-    // Supprime la sauvegarde : l'annulation est à usage unique.
-    await prefs.remove('reset_backup_$walletId');
-
-    Future<void> write(String key, String? value) async {
-      if (value != null) {
-        await prefs.setString(key, value);
-      } else {
-        await prefs.remove(key);
-      }
-    }
-
-    await write('cache_wallet', backup['wallet'] as String?);
-    await write('cache_dashboard_$walletId', backup['dashboard'] as String?);
-    await write('cache_txs_$walletId', backup['transactions'] as String?);
-    await write('cache_budgets_$walletId', backup['budgets'] as String?);
-    await write('outbox_hidden_before', backup['hidden_before'] as String?);
-
-    // Retire l'opération resetAll la plus récente encore en attente.
-    final ops = await _load();
-    final fallback = OutboxOp(
-      id: '',
-      kind: '',
-      walletId: '',
-      payload: const {},
-      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-    );
-    final lastReset = ops.lastWhere(
-      (o) => o.kind == OutboxKind.resetAll,
-      orElse: () => fallback,
-    );
-    if (lastReset.id.isNotEmpty) {
-      await removePendingOp(lastReset.id);
-    }
-    return true;
   }
 
   // ---------- Overlay local (transactions créées/supprimées/modifiées) ----------
@@ -556,64 +468,6 @@ class Outbox {
     await prefs.setString('cache_dashboard_$walletId', jsonEncode(json));
   }
 
-  /// Remise à zéro optimiste côté local (le backend archive, les stats restent).
-  Future<void> applyResetLocally(String walletId, {required bool includeSavings}) async {
-    await _setHiddenBefore(DateTime.now());
-    final prefs = await _prefs;
-    final walletJson = await _readCachedWalletJson();
-    var savingsKept = 0;
-    if (walletJson != null && walletJson['id'] == walletId) {
-      savingsKept = (walletJson['savingsAmount'] as num?)?.toInt() ?? 0;
-      final kept = includeSavings ? 0 : savingsKept;
-      walletJson['balance'] = kept;
-      walletJson['savingsAmount'] = kept;
-      walletJson['initialAmount'] = kept;
-      walletJson['startDate'] = DateTime.now().toIso8601String().substring(0, 10);
-      await _writeCachedWalletJson(walletJson);
-    }
-    // Les compteurs des budgets repartent à zéro (les limites sont conservées).
-    try {
-      final budgets = await CacheService.instance.loadBudgets(walletId);
-      if (budgets.isNotEmpty) {
-        await CacheService.instance.saveBudgets(
-          walletId,
-          budgets
-              .map((b) => {
-                    'id': b.id,
-                    'walletId': b.walletId,
-                    'category': b.category,
-                    'limitAmount': b.limitAmount,
-                    'spent': 0,
-                    'percent': 0,
-                    'alertLevel': 0,
-                  })
-              .toList(),
-        );
-      }
-    } catch (_) {
-      // Cache budgets facultatif.
-    }
-    final dashRaw = await _readCachedDashboard(walletId);
-    if (dashRaw != null) {
-      final kept = includeSavings ? 0 : savingsKept;
-      dashRaw['balance'] = kept;
-      dashRaw['initialAmount'] = kept;
-      dashRaw['totalExpenses'] = 0;
-      dashRaw['totalIncomes'] = 0;
-      dashRaw['transactionsCount'] = 0;
-      dashRaw['percentUsed'] = 0;
-      dashRaw['weeklySeries'] = <Map<String, dynamic>>[];
-      dashRaw['latestTransactions'] = <Map<String, dynamic>>[];
-      await _writeCachedDashboard(walletId, dashRaw);
-    }
-    await prefs.remove('cache_txs_$walletId');
-    final pending = await pendingTransactions();
-    pending.clear();
-    await _savePendingTransactions(pending);
-    await _saveDeletedIds(<String>{});
-    await _saveUpdatedTransactions(<String, Transaction>{});
-  }
-
   // ---------- Flush ----------
 
   /// Retire l'overlay budgétaire (opérations en attente) sur une liste de budgets.
@@ -662,22 +516,6 @@ class Outbox {
     return false;
   }
 
-  /// Le serveur connaît-il l'historique des périodes (nouvelles routes) ?
-  /// Sans lui, /reset DÉTRUIRAIT TOUT — on ne rejoue pas resetAll sur un serveur obsolète.
-  Future<bool> _serverHasPeriodsApi(String walletId) async {
-    try {
-      await ApiClient.instance.dio.head(
-        '/wallets/$walletId/periods',
-        options: Options(receiveTimeout: const Duration(seconds: 10), connectTimeout: const Duration(seconds: 10)),
-      );
-      return true;
-    } on DioException catch (_) {
-      return false; // 404 (ancien serveur) comme toute autre erreur : on ne rejoue pas
-    } catch (_) {
-      return false;
-    }
-  }
-
   /// Rejoue les opérations en attente, dans l'ordre. S'arrête à la première
   /// erreur réseau (les suivantes attendront le prochain passage).
   ///
@@ -692,11 +530,6 @@ class Outbox {
       final ops = await _load();
       if (ops.isEmpty) break;
       final op = ops.first;
-      // Un serveur obsolète DÉTRUIRAIT tout avec /reset — on ne le rejoue pas tant
-      // que les nouvelles routes n'existent pas (la remise à zéro est annulée côté local).
-      if (op.kind == OutboxKind.resetAll && !(await _serverHasPeriodsApi(op.walletId))) {
-        break;
-      }
       try {
         await _execute(op);
       } on DioException catch (e) {
@@ -809,9 +642,15 @@ class Outbox {
       case OutboxKind.budgetDelete:
         // Suppression refusée : le budget réapparaîtra à la prochaine revalidation.
         break;
-      case OutboxKind.resetAll:
-        // Remise à zéro refusée : la coupure locale est levée (l'état serveur fait foi).
-        await _setHiddenBefore(null);
+      case OutboxKind.categoryCreate:
+        try {
+          final cached = await CategoryRepository.instance.loadCache();
+          await CategoryRepository.instance.saveCache(
+            cached.where((c) => c.id != op.id).toList(),
+          );
+        } catch (_) {
+          // Le prochain chargement reconstituera le cache depuis le serveur.
+        }
         break;
     }
   }
@@ -831,9 +670,6 @@ class Outbox {
         break;
       case OutboxKind.transactionDelete:
         deleted.remove(op.id);
-        break;
-      case OutboxKind.resetAll:
-        await _setHiddenBefore(null);
         break;
       default:
         break;
@@ -894,26 +730,121 @@ class Outbox {
       case OutboxKind.budgetDelete:
         await dio.delete('/wallets/${op.walletId}/budgets/${op.payload['id']}');
         break;
-      case OutboxKind.resetAll:
-        await dio.post('/wallets/${op.walletId}/reset', data: {
-          'includeSavings': op.payload['includeSavings'] == true,
-        });
+      case OutboxKind.categoryCreate:
+        final data = op.payload;
+        try {
+          await dio.post('/categories', data: {
+            'id': data['id'],
+            'type': data['type'],
+            'name': data['name'],
+          });
+        } on DioException catch (e) {
+          final body = e.response?.data;
+          final error = (body is Map && body['error'] is Map) ? body['error'] as Map : null;
+          final details = error?['details'];
+          // Fusion idempotente : la catégorie existe déjà côté serveur → succès côté file.
+          if (e.response?.statusCode == 409 &&
+              error?['code'] == 'CATEGORY_EXISTS' &&
+              details is Map &&
+              details['category'] is Map) {
+            final serverCategory = details['category'] as Map;
+            final existingId = serverCategory['id'] as String?;
+            final opId = data['id'] as String?;
+            if (existingId != null && opId != null && existingId != opId) {
+              // La transaction créée hors-ligne pointe l'id local : on réécrit
+              // les opérations en attente sur l'id serveur pour éviter un 400.
+              await _remapCategoryId(opId, existingId);
+            }
+            return;
+          }
+          rethrow;
+        }
         break;
       default:
         break; // opération inconnue : ignorée
     }
   }
 
-  /// Enregistre une remise à zéro en attente (hors-ligne).
-  Future<void> enqueueReset(String walletId, {required bool includeSavings}) async {
-    final opId = 'reset_${DateTime.now().millisecondsSinceEpoch}';
-    await enqueue(OutboxOp(
-      id: opId,
-      kind: OutboxKind.resetAll,
-      walletId: walletId,
-      payload: {'includeSavings': includeSavings},
-      createdAt: DateTime.now(),
-    ));
+  /// Réécrit l'identifiant de catégorie dans toutes les opérations en attente
+  /// (transactions créées/modifiées, budgets, cache local). Utilisé lorsqu'une
+  /// catégorie créée hors-ligne fusionne avec une catégorie existante du serveur.
+  Future<void> _remapCategoryId(String oldId, String newId) async {
+    // 1. Opérations en attente (et payloads imbriqués).
+    final ops = await _load();
+    final remappedOps = ops.map((op) {
+      final payload = Map<String, dynamic>.from(op.payload);
+      if (payload['categoryId'] == oldId) payload['categoryId'] = newId;
+      return OutboxOp(
+        id: op.id,
+        kind: op.kind,
+        walletId: op.walletId,
+        payload: payload,
+        createdAt: op.createdAt,
+      );
+    }).toList();
+    await _save(remappedOps);
+
+    // 2. Overlay local des transactions créées hors-ligne.
+    final pending = await pendingTransactions();
+    final remappedPending = pending
+        .map((t) => t.categoryId == oldId ? t.copyWith(categoryId: newId) : t)
+        .toList();
+    await _savePendingTransactions(remappedPending);
+
+    // 3. Overlays des modifications.
+    final updates = await updatedTransactions();
+    for (final entry in updates.entries.toList()) {
+      if (entry.value.categoryId == oldId) {
+        updates[entry.key] = entry.value.copyWith(categoryId: newId);
+      }
+    }
+    await _saveUpdatedTransactions(updates);
+  }
+
+  /// Crée une catégorie, en ligne si possible, sinon mise en file d'attente
+  /// (l'opération sera rejouée au retour du réseau — id client stable).
+  /// Retourne la catégorie effective (existante si fusion, nouvelle sinon).
+  Future<Category> createCategoryOfflineAware({
+    required String type,
+    required String name,
+    String? walletId,
+  }) async {
+    final clientId = const Uuid().v4();
+    try {
+      final res = await CategoryRepository.instance.create(
+        type: type,
+        name: name,
+        clientId: clientId,
+      );
+      return res.category;
+    } on DioException catch (e) {
+      if (!_isNetworkish(e)) rethrow;
+      final temp = Category(id: clientId, name: name, type: type, isDefault: false);
+      final cached = await CategoryRepository.instance.loadCache();
+      final exists = cached.any((c) => c.id == temp.id);
+      if (!exists) {
+        await CategoryRepository.instance.saveCache([...cached, temp]);
+      }
+      await enqueue(OutboxOp(
+        id: clientId,
+        kind: OutboxKind.categoryCreate,
+        walletId: walletId ?? '',
+        payload: {'id': clientId, 'type': type, 'name': name},
+        createdAt: DateTime.now(),
+      ));
+      return temp;
+    }
+  }
+
+  /// Vide toute la file et les caches locaux liés aux écritures en attente.
+  /// Utilisé par la réinitialisation complète (le serveur fait foi ensuite).
+  Future<void> clearAll() async {
+    final prefs = await _prefs;
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('outbox_') || key.startsWith('reset_backup_')) {
+        await prefs.remove(key);
+      }
+    }
   }
 
   /// Enregistre un versement/retrait d'épargne en attente (hors-ligne).
@@ -935,17 +866,3 @@ class Outbox {
   }
 }
 
-/// Petite aide : copie d'une transaction avec un nouvel id.
-extension TransactionCopy on Transaction {
-  Transaction copyWith({String? id}) => Transaction(
-        id: id ?? this.id,
-        walletId: walletId,
-        type: type,
-        amount: amount,
-        category: category,
-        description: description,
-        date: date,
-        time: time,
-        paymentMethod: paymentMethod,
-      );
-}

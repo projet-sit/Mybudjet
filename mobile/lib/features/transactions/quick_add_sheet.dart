@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/category_names.dart';
 import '../../core/utils/money.dart';
 import '../../models/categories.dart';
+import '../../models/category.dart';
 import '../../models/transaction.dart';
+import '../../providers/category_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -27,7 +30,12 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   String _mode = 'expense';
   String _amount = '';
   String _category = 'Alimentation';
+  String? _categoryId;
   bool _saving = false;
+  bool _addingCustom = false;
+  bool _savingCategory = false;
+  final _customNameController = TextEditingController();
+  final _customFocus = FocusNode();
 
   @override
   void initState() {
@@ -37,18 +45,108 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
       _mode = tx.type == 'income' ? 'income' : 'expense';
       _amount = '${tx.amount}';
       _category = tx.category;
+      _categoryId = tx.categoryId;
     }
   }
 
-  List<String> get _categories => _mode == 'expense'
-      ? ExpenseCategories.list.map((e) => e.$1).toList()
-      : IncomeCategories.list;
+  @override
+  void dispose() {
+    _customNameController.dispose();
+    _customFocus.dispose();
+    super.dispose();
+  }
+
+  /// Catégories pour le mode actif : défauts (sans « Autres ») → personnalisées → « Autres ».
+  List<String> get _categoryNames {
+    final all = ref.watch(_mode == 'expense' ? expenseCategoriesProvider : incomeCategoriesProvider);
+    if (all.isEmpty) {
+      return _mode == 'expense'
+          ? ExpenseCategories.list.map((e) => e.$1).toList()
+          : IncomeCategories.list;
+    }
+    return all.map((c) => c.name).toList();
+  }
+
+  Category? _findCategory(List<Category> all, String name) {
+    final norm = normalizeCategoryName(name);
+    for (final c in all) {
+      if (c.type == _mode && c.normalized == norm) return c;
+    }
+    return null;
+  }
 
   void _setMode(String mode) {
     setState(() {
       _mode = mode;
-      _category = _categories.first;
+      _category = _categoryNames.isNotEmpty ? _categoryNames.first : 'Alimentation';
+      _categoryId = null;
+      _addingCustom = false;
+      _customNameController.clear();
     });
+  }
+
+  void _selectCategory(String name) {
+    final all = ref.read(_mode == 'expense' ? expenseCategoriesProvider : incomeCategoriesProvider);
+    final found = _findCategory(all, name);
+    setState(() {
+      _category = name;
+      _categoryId = found?.id;
+      _addingCustom = name == 'Autres';
+      if (name != 'Autres') _customNameController.clear();
+    });
+    if (name == 'Autres') {
+      // Laisse le temps au champ de s'afficher, puis donne le focus.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _customFocus.requestFocus();
+      });
+    }
+  }
+
+  /// Valide le nom saisi dans le champ « Autres » : crée (ou retrouve) la
+  /// catégorie personnalisée, puis la sélectionne.
+  Future<void> _createCustomCategory() async {
+    final all = ref.read(_mode == 'expense' ? expenseCategoriesProvider : incomeCategoriesProvider);
+    final input = _customNameController.text;
+    final check = validateCategoryName(input);
+    if (!check.ok) {
+      _snack(check.error ?? 'Nom invalide');
+      return;
+    }
+    final exists = _findCategory(all, check.value);
+    if (exists != null) {
+      setState(() {
+        _category = exists.name;
+        _categoryId = exists.id;
+        _addingCustom = false;
+        _customNameController.clear();
+      });
+      _snack('Cette catégorie existe déjà, elle est sélectionnée');
+      return;
+    }
+
+    setState(() => _savingCategory = true);
+    try {
+      final wallet = ref.read(walletControllerProvider).value;
+      final created = await Outbox.instance.createCategoryOfflineAware(
+        type: _mode,
+        name: check.value,
+        walletId: wallet?.id,
+      );
+      ref.invalidate(categoriesProvider);
+      if (!mounted) return;
+      setState(() {
+        _category = created.name;
+        _categoryId = created.id;
+        _addingCustom = false;
+        _customNameController.clear();
+      });
+      _snack('Catégorie « ${created.name} » créée');
+    } catch (e) {
+      if (!mounted) return;
+      _snack(TransactionsController.messageFrom(e));
+    } finally {
+      if (mounted) setState(() => _savingCategory = false);
+    }
   }
 
   void _key(String key) {
@@ -91,6 +189,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         type: _mode,
         amount: amount,
         category: _category,
+        categoryId: _categoryId ?? widget.editing?.categoryId,
         description: widget.editing?.description,
         date: widget.editing?.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now()),
         time: widget.editing?.time ?? DateFormat('HH:mm').format(DateTime.now()),
@@ -193,13 +292,13 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                 height: 44,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  itemCount: _categories.length,
+                  itemCount: _categoryNames.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
-                    final name = _categories[i];
+                    final name = _categoryNames[i];
                     final selected = name == _category;
                     return GestureDetector(
-                      onTap: () => setState(() => _category = name),
+                      onTap: () => _selectCategory(name),
                       child: Container(
                         alignment: Alignment.center,
                         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -221,6 +320,60 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                   },
                 ),
               ),
+              if (_addingCustom) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                  decoration: BoxDecoration(
+                    color: fieldBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: scheme.outline),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Nom de la catégorie',
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _customNameController,
+                              focusNode: _customFocus,
+                              maxLength: 30,
+                              textCapitalization: TextCapitalization.sentences,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: 'Ex. Coiffure',
+                                counterText: '',
+                              ),
+                              onSubmitted: (_) => _savingCategory ? null : _createCustomCategory(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 38,
+                            child: FilledButton(
+                              onPressed: _savingCategory ? null : _createCustomCategory,
+                              child: _savingCategory
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Text('Valider'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               for (final row in const [
                 ['1', '2', '3'],

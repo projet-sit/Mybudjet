@@ -9,6 +9,7 @@ import '../models/transaction.dart';
 import '../services/cache_service.dart';
 import '../services/data_repository.dart';
 import '../services/outbox.dart';
+import '../services/budget_alerts_service.dart';
 import '../core/search/transaction_search.dart';
 import '../providers/sync_provider.dart';
 import 'wallet_provider.dart';
@@ -279,6 +280,11 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
   /// liste + solde + dashboard, et attend réellement les rechargements.
   /// Se termine toujours (jamais de chargement infini).
   Future<void> refreshAll() async {
+    final walletId = ref.read(walletControllerProvider).value?.id;
+    if (walletId != null) {
+      // Signale aux alertes qu'une écriture a eu lieu (évaluation des budgets à venir).
+      await BudgetAlertsService.instance.markPending(walletId);
+    }
     final flushResult = await Outbox.instance.flush();
     if (flushResult.hasFailures) {
       ref.read(syncNoticeProvider.notifier).setFailed(
@@ -441,10 +447,13 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
         wallet.id,
         budgets.map((b) => b.toJson()).toList(),
       );
-      return Outbox.instance.applyBudgetOverlay(budgets);
+      final fresh = await Outbox.instance.applyBudgetOverlay(budgets);
+      await BudgetAlertsService.instance.evaluate(fresh);
+      return fresh;
     } on DioException catch (_) {
       final cached = await CacheService.instance.loadBudgets(wallet.id);
       final merged = await Outbox.instance.applyBudgetOverlay(cached);
+      await BudgetAlertsService.instance.evaluate(merged);
       if (merged.isNotEmpty || cached.isNotEmpty) return merged;
       rethrow;
     }
@@ -469,11 +478,11 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
     );
   }
 
-  Future<void> create({required String category, required int limitAmount}) async {
+  Future<void> create({required String category, required int limitAmount, String? categoryId}) async {
     final wallet = ref.watch(walletControllerProvider).value;
     if (wallet == null) return;
     try {
-      await DataRepository.instance.createBudget(wallet.id, category: category, limitAmount: limitAmount);
+      await DataRepository.instance.createBudget(wallet.id, category: category, limitAmount: limitAmount, categoryId: categoryId);
     } on DioException catch (e) {
       if (!_isNetworkish(e)) rethrow;
       final localId = Outbox.instance.newLocalId();
@@ -486,7 +495,7 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
         id: localId,
         kind: OutboxKind.budgetUpsert,
         walletId: wallet.id,
-        payload: {'id': localId, 'category': category, 'limitAmount': limitAmount},
+        payload: {'id': localId, 'category': category, 'limitAmount': limitAmount, 'categoryId': ?categoryId},
         createdAt: DateTime.now(),
       ));
       await ref.read(syncInfoProvider.notifier).refresh();

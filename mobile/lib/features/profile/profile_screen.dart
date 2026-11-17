@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/cache_service.dart';
 import '../../services/outbox.dart';
+import '../../services/budget_alerts_service.dart';
 import '../../services/transaction_pdf_export_service.dart';
 import '../reset/reset_flow.dart';
 /// Profil (maquette « MyBudget ») : compte, portefeuille, préférences,
@@ -47,6 +48,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _resetAll() => showResetAllFlow(context, ref);
+
+  /// Interrupteur « Alertes de budget » : à l'activation, demande la permission
+  /// POST_NOTIFICATIONS (Android 13+). En cas de refus, l'interrupteur reste coupé.
+  Future<void> _toggleBudgetAlerts(bool value) async {
+    if (value) {
+      final granted = await BudgetAlertsService.instance.requestPermission();
+      if (!mounted) return;
+      if (!granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notifications refusées. Autorise-les dans les réglages Android pour recevoir les alertes de budget.'),
+          ),
+        );
+        return;
+      }
+    }
+    await ref.read(alertsEnabledProvider.notifier).setEnabled(value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -195,10 +214,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Divider(height: 1, color: scheme.outline),
               SwitchListTile.adaptive(
                 value: alerts,
-                onChanged: (value) => ref.read(alertsEnabledProvider.notifier).setEnabled(value),
+                onChanged: (value) => _toggleBudgetAlerts(value),
                 secondary: Icon(Icons.notifications_outlined, color: scheme.primary),
                 title: const _TileTitle('Alertes de budget'),
-                subtitle: const _TileSubtitle('Prévenir à 50 %, 80 % et 100 %'),
+                subtitle: const _TileSubtitle('Notifier à 80 % et 100 % du budget'),
               ),
               Divider(height: 1, color: scheme.outline),
               ListTile(
@@ -218,6 +237,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _card(
             context,
             children: [
+              Divider(height: 1, color: scheme.outline),
+              ListTile(
+                leading: Icon(Icons.label_outline, color: scheme.primary),
+                title: const _TileTitle('Mes catégories'),
+                subtitle: const _TileSubtitle('Renommer ou supprimer les tiennes'),
+                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                onTap: () => context.push('/my-categories'),
+              ),
               Divider(height: 1, color: scheme.outline),
               ListTile(
                 leading: Icon(Icons.savings_outlined, color: scheme.primary),
@@ -274,13 +301,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             onPressed: _resetAll,
             icon: const Icon(Icons.restart_alt, size: 18),
-            label: const Text('Réinitialiser tout à 0'),
+            label: const Text('Réinitialiser tout'),
           ),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              'La période en cours sera archivée (historique conservé). Ton épargne est conservée par défaut.',
+              'Toutes tes données seront supprimées définitivement (portefeuilles, opérations, budgets, épargne, objectifs et catégories personnalisées). Ton compte est conservé.',
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ),

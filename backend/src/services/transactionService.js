@@ -1,12 +1,22 @@
 const transactionRepository = require('../repositories/transactionRepository');
 const periodRepository = require('../repositories/periodRepository');
 const walletService = require('./walletService');
+const categoryRepository = require('../repositories/categoryRepository');
 const ApiError = require('../utils/ApiError');
 
 async function create(uid, walletId, body) {
   const wallet = await walletService.getWallet(uid, walletId); // vérifie propriétaire
   const data = require('../validators/transactionValidator').validateTransactionBody(body);
-  return transactionRepository.createTransaction({ walletId: wallet.id, ...data });
+  const cat = await categoryRepository.resolve(uid, data.type, {
+    categoryId: data.categoryId,
+    category: data.category,
+  });
+  return transactionRepository.createTransaction({
+    walletId: wallet.id,
+    ...data,
+    category: cat.name,
+    categoryId: cat.id,
+  });
 }
 
 async function update(uid, walletId, txId, body) {
@@ -22,11 +32,23 @@ async function update(uid, walletId, txId, body) {
     type: data.type ?? existing.type,
     amount: data.amount ?? existing.amount,
     category: data.category ?? existing.category,
+    categoryId: data.categoryId,
     description: data.description !== undefined ? data.description : existing.description,
     date: data.date ?? existing.date,
     time: data.time ?? existing.time,
     paymentMethod: data.paymentMethod !== undefined ? data.paymentMethod : existing.paymentMethod,
   };
+  // Catégorie : résolution base (personnalisée utilisateur ou défaut) si fournie.
+  if (data.categoryId !== undefined || data.category !== undefined) {
+    const cat = await categoryRepository.resolve(uid, merged.type, {
+      categoryId: data.categoryId,
+      category: data.category,
+    });
+    merged.category = cat.name;
+    merged.categoryId = cat.id;
+  } else {
+    delete merged.categoryId;
+  }
   return transactionRepository.updateTransaction({ walletId: wallet.id, txId, ...merged });
 }
 

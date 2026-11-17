@@ -7,6 +7,7 @@ class User {
     this.photoUrl,
     required this.currency,
     this.createdAt,
+    this.dataEpoch = 0,
   });
 
   final String id;
@@ -16,6 +17,10 @@ class User {
   final String? photoUrl;
   final String currency;
   final DateTime? createdAt;
+
+  /// Incrémenté à chaque réinitialisation complète du compte (côté serveur).
+  /// Les autres appareils détectent le changement et effacent leur cache local.
+  final int dataEpoch;
 
   /// Identifiant principal à afficher (numéro de téléphone, sinon e-mail legacy).
   String get identifier => phone ?? email ?? '';
@@ -28,6 +33,7 @@ class User {
       phone: json['phone'] as String?,
       photoUrl: json['photoUrl'] as String?,
       currency: (json['currency'] ?? 'XOF') as String,
+      dataEpoch: ((json['dataEpoch'] ?? json['data_epoch']) as num?)?.toInt() ?? 0,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
@@ -41,6 +47,7 @@ class User {
         if (phone != null) 'phone': phone,
         if (photoUrl != null) 'photoUrl': photoUrl,
         'currency': currency,
+        'dataEpoch': dataEpoch,
         if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       };
 }

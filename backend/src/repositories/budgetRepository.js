@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../config/db');
 const ApiError = require('../utils/ApiError');
 const walletService = require('../services/walletService');
 const periodRepository = require('./periodRepository');
+const categoryRepository = require('./categoryRepository');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -11,6 +12,7 @@ function toBudget(row) {
     userId: row.user_id,
     walletId: row.wallet_id,
     category: row.category,
+    categoryId: row.category_id ?? null,
     limitAmount: Number(row.limit_amount),
     period: row.period,
     createdAt: row.created_at,
@@ -19,25 +21,28 @@ function toBudget(row) {
 
 async function create(uid, walletId, body) {
   await walletService.getWallet(uid, walletId); // isolation
-  const category = String(body.category || '').trim();
   const limit = Number(body.limitAmount);
-  if (!category) throw ApiError.validation('Catégorie requise', { field: 'category' });
   if (!Number.isInteger(limit) || limit <= 0) {
     throw ApiError.validation('La limite doit être un entier positif', { field: 'limitAmount' });
   }
 
+  const cat = await categoryRepository.resolve(uid, 'expense', {
+    categoryId: body.categoryId,
+    category: body.category,
+  });
+
   const existing = await query(
-    'SELECT id FROM budgets WHERE wallet_id = $1 AND category = $2',
-    [walletId, category]
+    'SELECT id FROM budgets WHERE wallet_id = $1 AND (category_id = $2 OR (category_id IS NULL AND category = $3))',
+    [walletId, cat.id, cat.name]
   );
   if (existing.rows.length > 0) {
-    throw ApiError.conflict('BUDGET_EXISTS', `Un budget existe déjà pour ${category}`);
+    throw ApiError.conflict('BUDGET_EXISTS', `Un budget existe déjà pour ${cat.name}`);
   }
 
   const { rows } = await query(
-    `INSERT INTO budgets (user_id, wallet_id, category, limit_amount, period)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [uid, walletId, category, limit, body.period || 'monthly']
+    `INSERT INTO budgets (user_id, wallet_id, category, category_id, limit_amount, period)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [uid, walletId, cat.name, cat.id, limit, body.period || 'monthly']
   );
   return toBudget(rows[0]);
 }
@@ -58,17 +63,22 @@ async function list(uid, walletId, { withProgress = false, dateFrom, dateTo } = 
   if (!dateTo || !DATE_RE.test(dateTo)) dateTo = active.period.endDate;
 
   const spentRows = await query(
-    `SELECT category, SUM(amount) AS spent
+    `SELECT category_id, category, SUM(amount) AS spent
      FROM transactions
      WHERE wallet_id = $1 AND type = 'expense' AND period_id = $2
-     GROUP BY category`,
+     GROUP BY category_id, category`,
     [walletId, periodId]
   );
-  const spentMap = new Map(spentRows.rows.map((r) => [r.category, Number(r.spent)]));
+  const spentById = new Map();
+  const spentByName = new Map();
+  for (const r of spentRows.rows) {
+    if (r.category_id) spentById.set(r.category_id, Number(r.spent));
+    spentByName.set(r.category, Number(r.spent));
+  }
 
   return {
     budgets: budgets.map((b) => {
-      const spent = spentMap.get(b.category) || 0;
+      const spent = (b.categoryId && spentById.get(b.categoryId)) ?? spentByName.get(b.category) ?? 0;
       return {
         ...b,
         spent,

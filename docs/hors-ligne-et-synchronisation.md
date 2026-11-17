@@ -38,11 +38,13 @@ SharedPreferences (clés) :
 
 `lib/services/outbox.dart` — file d'attente persistante :
 
+- **Synchronisation des autres appareils** (`data_epoch`) : à chaque contact serveur, le client compare le `data_epoch` reçu à celui en cache ; différent ⇒ effacement complet du cache local et de la file (`Outbox.clearAll`), rechargement des données depuis le serveur, redirection vers la création du premier portefeuille. Aucune ancienne écriture n'est renvoyée.
 - Enqueue dans l'ordre ; échec réseau → l'opération **est conservée** ; erreur métier 4xx → l'opération est **abandonnée** avec rollback de l'effet optimiste local + remontée pour affichage (« syncNotice »).
-- Types : `transaction_create|update|delete`, `savings_deposit|withdraw|withdraw_all`, `budget_upsert|delete`, `reset_all`.
+- Types : `transaction_create|update|delete`, `savings_deposit|withdraw|withdraw_all`, `budget_upsert|delete`, `category_create`.
 - `applyOverlay()` fusionne les opérations en attente avec le cache pour l'affichage immédiat.
 - Ajustements optimistes du cache : `_adjustCachedWalletForTx` corrige solde/épargne/dashboard ; les opérations d'épargne ne touchent pas le solde.
 - Les ids locaux sont `local_<uuid>`, remplacés par les vrais ids au flush (dédup par ids).
+- **Catégories hors-ligne** : la création est rejouée avec le **même id client UUID** que dans la file ; si le serveur annonce une fusion (`CATEGORY_EXISTS` avec la catégorie existante), l'id des opérations en attente de ce client est réécrit sur l'id serveur avant rejeu des transactions.
 
 ## Indicateur de synchronisation
 
@@ -73,7 +75,7 @@ sequenceDiagram
 
   App->>Net: flush() au retour du réseau / au resume
   loop Dans l'ordre
-    App->>API: POST /transactions (ou savings / reset)
+    App->>API: POST /transactions (ou savings / categories)
     alt Succès
       API->>DB: transaction SQL (FOR UPDATE)
       DB-->>API: newBalance
@@ -102,6 +104,8 @@ sequenceDiagram
 
 ## Reset hors-ligne
 
-- `applyResetLocally()` : `hidden_before = now`, portefeuille à 0 (épargne gardée si non incluse), compteurs budgets à 0, caches purgés.
-- **Garde « serveur obsolète »** : si le serveur ne répond pas à `HEAD /wallets/:id/periods` (404), le reset reste en file et ne sera **pas** rejoué ; l'UI bascule en mode « effacement définitif explicite ». C'est une protection anti-destruction, pas un bug.
-- Annulation 10 s : `createResetBackup`/`restoreResetBackup` (local, usage unique) ou `PeriodRepository.undo` (serveur, en ligne).
+- **La réinitialisation exige le réseau** (`POST /me/reset`, atomique côté serveur) : hors-ligne, l'app refuse avec « Connexion requise pour réinitialiser ».
+- **Après succès** : cache local et file vidés entièrement ; aucune opération en attente n'existe pour ressusciter des données.
+- **Autres appareils** : au prochain contact avec le serveur (`/auth/me`), la différence de `data_epoch` déclenche l'effacement local et un rechargement complet.
+- L'ancienne remise à zéro hors-ligne (coupure locale + rejoue `reset_all`) a été retirée : une seule logique de reset.
+- Annulation 10 s : uniquement via l'API (`POST /wallets/:id/period/:periodId/undo`) pour les périodes, pas pour la réinitialisation complète (définitive par conception).

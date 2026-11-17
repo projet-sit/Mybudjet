@@ -5,6 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/user.dart' show AuthSession;
 import '../services/auth_repository.dart';
+import '../services/cache_service.dart';
+import '../services/outbox.dart';
+import 'category_provider.dart';
+import 'epoch_reset_provider.dart';
+import 'transaction_provider.dart';
+import 'sync_provider.dart';
 import 'wallet_provider.dart';
 
 /// Session courante (null si non connecté).
@@ -24,6 +30,27 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   Future<void> _validateInBackground(AuthSession session) async {
     try {
       final user = await AuthRepository.instance.me();
+      // Changement côté serveur : effacement des caches locaux + signal d'epoch.
+      if (user.dataEpoch != session.user.dataEpoch) {
+        await CacheService.instance.clearAllCaches();
+        await Outbox.instance.clearAll();
+        ref.invalidate(walletControllerProvider);
+        ref.invalidate(transactionsProvider);
+        ref.invalidate(dashboardControllerProvider);
+        ref.invalidate(budgetsControllerProvider);
+        ref.invalidate(statsControllerProvider);
+        ref.invalidate(categoriesProvider);
+        unawaited(ref.read(syncInfoProvider.notifier).refresh());
+        final refreshed = AuthSession(
+          user: user,
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+        );
+        await AuthRepository.instance.persistSession(refreshed);
+        state = AsyncData(refreshed);
+        ref.read(epochResetProvider.notifier).set(user.dataEpoch);
+        return;
+      }
       final refreshed = AuthSession(
         user: user,
         accessToken: session.accessToken,
@@ -67,6 +94,13 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     final session = state.value;
     if (session == null) return;
     await _validateInBackground(session);
+  }
+
+  /// Installe une session fraîche (ex. après une remise à zéro) sans déclencher
+  /// de détection de changement d'epoch. La persistence est déjà faite par
+  /// l'appelant (resetAccount).
+  void setSession(AuthSession session) {
+    state = AsyncData(session);
   }
 
   Future<void> register({

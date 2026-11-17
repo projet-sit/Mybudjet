@@ -51,7 +51,7 @@ Mots de passe hashés bcrypt, JWT access 1 h + refresh 30 j hashé SHA-256 et ro
 | Nom d'affichage | Oui | Personnalisation |
 | Devise (fixée XOF) | Non | Affichage |
 | Portefeuilles, transactions, budgets, périodes, objectifs, épargne | Oui | Fonctionnement de l'app |
-| Logs serveur (IP via proxy, route, statut, durée) | Oui | Exploitation, diagnostic |
+| Catégories personnalisées (nom de catégorie choisi par l'utilisateur) | Oui (si créées) | Opérations, budgets, recherche, statistiques |
 | Rapports de plantage (message, stack tronquée, écran, version) | Optionnel | Stabilité |
 
 **Non collectés** : localisation, contacts, photos, micro, contenu des SMS/notifications, identifiants publicitaires.
@@ -66,8 +66,14 @@ Mots de passe hashés bcrypt, JWT access 1 h + refresh 30 j hashé SHA-256 et ro
 ## Suppression du compte
 
 - Profil → « Supprimer mes données » : irréversible, confirmation forte (dialog + exigence de réseau + outbox vide).
-- Supprime en cascade : compte, portefeuilles, transactions, budgets, périodes (y compris archives et snapshots), objectifs, épargne, tokens.
+- Supprime en cascade : compte, portefeuilles, transactions, budgets, périodes (y compris archives et snapshots), objectifs, épargne, catégories personnalisées, tokens.
 - Recommandation : exporter le PDF avant suppression.
+
+## Notifications locales
+
+- Seules les alertes de budget sont notifiées, via le système de notification Android — **jamais** via le contenu d'autres applications (MyBudget ne lit aucune notification/SMS de tiers).
+- Une seule alerte par seuil (80 % / 100 %) et par période, désactivable d'un interrupteur.
+- À la désinstallation, les notifications disparaissent avec l'app.
 
 ## Sécurité des échanges
 

@@ -25,10 +25,18 @@ info:
 
     ## Codes d'erreur métier (`error.code`)
     `VALIDATION_ERROR`, `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404),
-    `EMAIL_ALREADY_IN_USE`, `PHONE_ALREADY_IN_USE` (409), `BALANCE_INSUFFICIENT` (409),
-    `SAVINGS_INSUFFICIENT` (409), `SAVINGS_LOCKED` (409), `BUDGET_EXISTS` (409),
+    `EMAIL_ALREADY_IN_USE`, `PHONE_ALREADY_IN_USE`, `CATEGORY_EXISTS`, `CATEGORY_HAS_BUDGET` (409),
+    `BALANCE_INSUFFICIENT` (409), `SAVINGS_INSUFFICIENT` (409), `SAVINGS_LOCKED` (409),
+    `BUDGET_EXISTS` (409),
     `UNDO_EXPIRED` / `UNDO_UNAVAILABLE` / `UNDO_HAS_TRANSACTIONS` (409), `RESTORE_BLOCKED` (409),
     `GOAL_HAS_SAVINGS` (409), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500).
+
+    ## Réinitialisation complète (`POST /me/reset`)
+    Supprime définitivement TOUTES les données du compte dans UNE SEULE transaction PostgreSQL :
+    portefeuilles, opérations, budgets, épargne, périodes et archives, objectifs, catégories
+    personnalisées. Les catégories par défaut sont restaurées (elles n'appartiennent à personne).
+    Le compte (téléphone, e-mail, mot de passe, sessions) est conservé. `dataEpoch` est incrémenté
+    (signal multi-appareils : les caches locaux doivent être effacés).
 
     ## Routes « Ciel » (`/stats/monthly`, `/export/*`, `/alerts/check`)
     Héritage d'un client tiers, montées sur **`/` et `/api/v1`**. Requêtes internes référençant
@@ -64,6 +72,8 @@ tags:
     description: Périodes mensuelles, archives, remise à zéro
   - name: Goals
     description: Objectifs d'épargne
+  - name: Categories
+    description: Catégories de dépenses et revenus (défauts + personnalisées)
   - name: Ciel (obsolète)
     description: Héritage ciel.app — ne pas utiliser
   - name: Client errors
@@ -407,6 +417,185 @@ paths:
               example:
                 success: false
                 error: { code: SAVINGS_LOCKED, message: "Solde inférieur à l'épargne des objectifs" }
+
+  /me/reset:
+    post:
+      tags: [Auth]
+      summary: Réinitialiser tout le compte (irréversible)
+      description: |
+        UNE SEULE transaction PostgreSQL : supprime portefeuilles, opérations, budgets,
+        épargne, périodes et archives, objectifs, catégories personnalisées ; conserve le
+        compte (téléphone, e-mail, mot de passe, sessions) et les catégories par défaut.
+        `dataEpoch` est incrémenté. Irréversible — export CSV conseillé avant (`GET /wallets/{walletId}/export`).
+      operationId: resetAccount
+      responses:
+        "200":
+          description: Compte réinitialisé, `dataEpoch` incrémenté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetAccountResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "500": { $ref: '#/components/responses/InternalError' }
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: Lister les catégories (défauts + personnalisées)
+      description: |
+        Tri : catégories par défaut (ordre produit), puis personnalisées (par nom), puis « Autres ».
+        Filtrable par `type=expense|income`.
+      operationId: listCategories
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [expense, income] }
+      responses:
+        "200":
+          description: Catégories visibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoriesResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Categories]
+      summary: Créer une catégorie personnalisée
+      description: |
+        Validation : 2 à 30 caractères, lettres/chiffres/espaces/apostrophes/tirets.
+        Unicité insensible casse/accents face aux défauts et aux autres personnalisées.
+        `id` client accepté (idempotence hors-ligne). En doublon : `409 CATEGORY_EXISTS`
+        avec la catégorie existante dans `error.details.category` (pas de doublon créé).
+        Maximum 30 personnalisées par type.
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+            example:
+              id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+              type: expense
+              name: Coiffure
+      responses:
+        "201":
+          description: Catégorie créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        "200":
+          description: Catégorie existante retournée (idempotence via `id` client)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        "400":
+          description: Nom invalide ou limite de 30 personnalisées atteinte
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "409":
+          description: Même nom qu'une catégorie existante ou par défaut
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: CATEGORY_EXISTS
+                  message: Cette catégorie existe déjà, elle est sélectionnée
+                  details:
+                    category:
+                      id: "6f1b2c00-0000-4000-8000-000000000001"
+                      name: Coiffure
+                      type: expense
+                      isDefault: false
+                      iconKey: label
+
+  /categories/{id}:
+    patch:
+      tags: [Categories]
+      summary: Renommer une catégorie personnalisée
+      description: |
+        Renommage + réécriture du nom sur les opérations et budgets liés.
+        Les catégories par défaut ne peuvent pas être renommées. Doublon : `409 CATEGORY_EXISTS`.
+      operationId: renameCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameCategoryRequest'
+            example: { name: Salon de coiffure }
+      responses:
+        "200":
+          description: Catégorie renommée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Le nouveau nom est déjà pris
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Categories]
+      summary: Supprimer une catégorie personnalisée
+      description: |
+        Les opérations liées passent en « Autres » (jamais perdues).
+        Si un budget y est lié et que `confirmBudgets` n'est pas fourni, répond `409 CATEGORY_HAS_BUDGET`
+        avec la liste des budgets. `confirmBudgets=1` : budget supprimé avec la catégorie.
+      operationId: deleteCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: confirmBudgets
+          in: query
+          schema: { type: string, enum: ['1', 'true'] }
+      responses:
+        "200":
+          description: Catégorie supprimée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCategoryResponse'
+              example: { success: true, data: { deleted: true, reassignedTo: Autres, budgetsDeleted: 0 } }
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Budget lié — confirmation requise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: CATEGORY_HAS_BUDGET
+                  message: Un budget est lié à cette catégorie
+                  details:
+                    budgets:
+                      - id: "6f1b2c00-0000-4000-8000-000000000010"
+                        category: Coiffure
+                        limitAmount: 30000
 
   /wallets/{id}/savings/deposit:
     post:
@@ -1295,6 +1484,15 @@ components:
           example:
             success: false
             error: { code: UNAUTHORIZED, message: "Session expirée, reconnecte-toi" }
+    InternalError:
+      description: Erreur serveur (message masqué en production)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: { code: INTERNAL_ERROR, message: "Erreur interne du serveur" }
     NotFound:
       description: Ressource introuvable (ou appartement à un autre utilisateur)
       content:
@@ -1402,6 +1600,7 @@ components:
         phone: { type: [string, "null"] }
         photoUrl: { type: [string, "null"] }
         currency: { type: string, example: XOF }
+        dataEpoch: { type: integer, minimum: 0, description: "Incrémenté à chaque réinitialisation complète" }
         createdAt: { type: string, format: date-time }
     Tokens:
       type: object
@@ -1513,6 +1712,7 @@ components:
         type: { type: string, enum: [expense, income, savings_deposit, savings_withdrawal] }
         amount: { type: integer, minimum: 1 }
         category: { type: string }
+        categoryId: { type: [string, "null"], format: uuid, description: "Lien vers la catégorie (défaut ou personnalisée)" }
         description: { type: [string, "null"], maxLength: 200 }
         date: { type: string, format: date }
         time: { type: string, pattern: '^\d{2}:\d{2}$' }
@@ -1534,13 +1734,18 @@ components:
     # ---------- Transactions ----------
     CreateTransactionRequest:
       type: object
-      required: [type, amount, category, date]
+      required: [type, amount, date]
       properties:
         type: { type: string, enum: [expense, income] }
         amount: { type: integer, minimum: 1, description: "FCFA entiers" }
         category:
           type: string
-          description: "Dépenses : Alimentation, Transport, Logement, Santé, Études, Communication, Loisirs, Shopping, Abonnements, Famille, Autres — Revenus : Salaire, Business, Cadeau, Bourse, Autres"
+          maxLength: 30
+          description: "Nom d'une catégorie (défaut ou personnalisée de l'utilisateur). Requis si categoryId absent."
+        categoryId:
+          type: string
+          format: uuid
+          description: "Id d'une catégorie (défaut ou personnalisée de l'utilisateur). Gagnant sur category si les deux sont fournis."
         description: { type: [string, "null"], maxLength: 200 }
         date: { type: string, format: date }
         time: { type: string, pattern: '^\d{2}:\d{2}$', description: "Défaut : maintenant" }
@@ -1550,7 +1755,8 @@ components:
       properties:
         type: { type: string, enum: [expense, income] }
         amount: { type: integer, minimum: 1 }
-        category: { type: string }
+        category: { type: string, maxLength: 30 }
+        categoryId: { type: string, format: uuid }
         description: { type: [string, "null"], maxLength: 200 }
         date: { type: string, format: date }
         time: { type: string, pattern: '^\d{2}:\d{2}$' }
@@ -1667,6 +1873,7 @@ components:
         id: { type: string, format: uuid }
         walletId: { type: string, format: uuid }
         category: { type: string }
+        categoryId: { type: [string, "null"], format: uuid }
         limitAmount: { type: integer, minimum: 1 }
         period: { type: string, default: monthly }
         spent: { type: integer, minimum: 0 }
@@ -1675,9 +1882,10 @@ components:
         alertLevel: { type: integer, enum: [0, 50, 80, 100], description: "0 <50 %, 50 ≥50 %, 80 ≥80 %, 100 ≥100 %" }
     CreateBudgetRequest:
       type: object
-      required: [category, limitAmount]
+      required: [limitAmount]
       properties:
-        category: { type: string, minLength: 1 }
+        category: { type: string, minLength: 1, maxLength: 30, description: "Requis si categoryId absent" }
+        categoryId: { type: string, format: uuid, description: "Gagne sur category" }
         limitAmount: { type: integer, minimum: 1 }
         period: { type: string, default: monthly }
     UpdateBudgetRequest:
@@ -1716,6 +1924,82 @@ components:
         status: { type: string, enum: [active, archived] }
         snapshot: { type: [object, "null"] }
         closedAt: { type: [string, "null"], format: date-time }
+    # ---------- Catégories ----------
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 30 }
+        type: { type: string, enum: [expense, income] }
+        isDefault: { type: boolean }
+        iconKey: { type: string, example: label }
+    CreateCategoryRequest:
+      type: object
+      required: [type, name]
+      properties:
+        id: { type: string, format: uuid, description: "Optionnel. Permet l'idempotence hors-ligne (id client)" }
+        type: { type: string, enum: [expense, income] }
+        name:
+          type: string
+          minLength: 2
+          maxLength: 30
+          pattern: "^[A-Za-zÀ-ÖØ-öø-ÿ0-9](?:[A-Za-zÀ-ÖØ-öø-ÿ0-9' \\-]*[A-Za-zÀ-ÖØ-öø-ÿ0-9])?$"
+    RenameCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 30
+          pattern: "^[A-Za-zÀ-ÖØ-öø-ÿ0-9](?:[A-Za-zÀ-ÖØ-öø-ÿ0-9' \\-]*[A-Za-zÀ-ÖØ-öø-ÿ0-9])?$"
+    CategoryResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            category: { $ref: '#/components/schemas/Category' }
+            fused: { type: boolean, description: "true si la catégorie existait déjà (rejeu `id` client)" }
+    CategoriesResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/Category' }
+            byType:
+              type: object
+              properties:
+                expense: { type: array, items: { $ref: '#/components/schemas/Category' } }
+                income: { type: array, items: { $ref: '#/components/schemas/Category' } }
+    DeleteCategoryResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            deleted: { type: boolean, const: true }
+            reassignedTo: { type: string, example: Autres }
+            budgetsDeleted: { type: integer, minimum: 0 }
+    ResetAccountResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            ok: { type: boolean, const: true }
+            dataEpoch: { type: integer, description: "Nouveau dataEpoch du compte (incrémenté)" }
     ResetRequest:
       type: object
       properties:

@@ -219,9 +219,46 @@ async function updateProfile(uid, { displayName, photoUrl, currency }) {
   return userRepository.toPublicUser(updated);
 }
 
+const { withTransaction } = require('../config/db');
+
 async function deleteAccount(uid) {
   await userRepository.deleteById(uid);
   return true;
+}
+
+/**
+ * Réinitialisation complète du compte ("comme neuf").
+ * UNE SEULE transaction PostgreSQL : tout ou rien.
+ * - Supprime définitivement : portefeuilles, opérations, budgets, épargne (colonnes),
+ *   historique du montant initial, objectifs, périodes et archives, catégories personnalisées.
+ * - Garde : compte (e-mail/téléphone, mot de passe, sessions), catégories par défaut,
+ *   préférences de l'appareil (thème géré côté client).
+ * - Incrémente users.data_epoch (signal multi-appareils d'effacement de cache).
+ */
+async function resetData(uid, { failBeforeCommit = false } = {}) {
+  return withTransaction(async (client) => {
+    const wallets = await client.query('SELECT id FROM wallets WHERE user_id = $1', [uid]);
+    for (const { id } of wallets.rows) {
+      await client.query('DELETE FROM transactions WHERE wallet_id = $1', [id]);
+      await client.query('DELETE FROM budgets WHERE wallet_id = $1', [id]);
+      await client.query('DELETE FROM goals WHERE wallet_id = $1', [id]);
+      await client.query('DELETE FROM periods WHERE wallet_id = $1', [id]);
+      await client.query('DELETE FROM initial_amount_history WHERE wallet_id = $1', [id]);
+      await client.query('DELETE FROM wallets WHERE id = $1', [id]);
+    }
+    await client.query('DELETE FROM goals WHERE user_id = $1', [uid]);
+    await client.query('DELETE FROM budgets WHERE user_id = $1', [uid]);
+    await client.query('DELETE FROM periods WHERE user_id = $1', [uid]);
+    // Catégories personnalisées de l'utilisateur uniquement (les défauts système sont conservées).
+    await client.query('DELETE FROM categories WHERE user_id = $1', [uid]);
+    await client.query('UPDATE users SET data_epoch = data_epoch + 1, updated_at = now() WHERE id = $1', [uid]);
+    if (failBeforeCommit) {
+      // Test e2e : provoque un rollback complet pour prouver qu'aucun paquetage n'est écrit.
+      throw new Error('TEST_RESET_FAILURE');
+    }
+    const { rows } = await client.query('SELECT data_epoch FROM users WHERE id = $1', [uid]);
+    return { ok: true, dataEpoch: rows[0].data_epoch };
+  });
 }
 
 module.exports = {
@@ -234,5 +271,6 @@ module.exports = {
   getProfile,
   updateProfile,
   deleteAccount,
+  resetData,
   verifyAccessToken,
 };

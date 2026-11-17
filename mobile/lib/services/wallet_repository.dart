@@ -45,19 +45,6 @@ class WalletRepository {
     return Wallet.fromJson(response.data['data']['wallet'] as Map<String, dynamic>);
   }
 
-  /// Remise à zéro DÉFINITIVE : efface transactions, budgets, objectifs,
-  /// périodes et historique ; remet solde et épargne à 0 (ancien comportement,
-  /// utilisé uniquement quand le backend ne connaît pas l'archivage).
-  Future<Wallet?> hardReset(String walletId) async {
-    final response = await _dio.post('/wallets/$walletId/reset');
-    final data = response.data;
-    final walletRaw = (data is Map && data['data'] is Map && (data['data'] as Map)['wallet'] is Map)
-        ? (data['data'] as Map)['wallet'] as Map
-        : null;
-    if (walletRaw == null) return null;
-    return Wallet.fromJson(Map<String, dynamic>.from(walletRaw));
-  }
-
   /// Versement à l'épargne (l'argent reste dans le compte, en réserve).
   /// Crée une transaction « Épargne » visible dans l'historique.
   Future<Wallet> depositSavings(String walletId, int amount) async {

@@ -30,6 +30,10 @@ const List<FaqItem> faqItems = [
     'L’épargne te permet de mettre de côté, dans le même portefeuille, sans créer de compte supplémentaire. Depuis « Mon épargne », tu peux verser, retirer ou tout récupérer en une fois.',
   ),
   FaqItem(
+    'À quoi servent mes catégories personnalisées ?',
+    'Quand tu touches « Autres » en créant une opération, tu peux écrire le nom de ta catégorie (par exemple Coiffure). Elle apparaît ensuite dans la liste, entre les catégories par défaut et « Autres ». Tu peux la renommer ou la supprimer depuis Profil → Mes catégories ; les opérations passent en « Autres » et ne sont jamais perdues.',
+  ),
+  FaqItem(
     'L’épargne est-elle une dépense ?',
     'Non. Une mise de côté n’apparaît pas dans tes dépenses ni dans tes statistiques de dépenses. Elle reste à part, sous « Épargne ».',
   ),
@@ -39,11 +43,11 @@ const List<FaqItem> faqItems = [
   ),
   FaqItem(
     'Comment remettre mes comptes à zéro ?',
-    'Profil → « Réinitialiser tout à 0 ». Un avertissement demande confirmation. La période en cours est archivée (ton historique est conservé) et ton épargne est gardée par défaut.',
+    'Profil → « Réinitialiser tout ». Tout sera supprimé définitivement (portefeuilles, opérations, budgets, épargne, objectifs, catégories personnalisées) et ton compte repartira comme un compte neuf. Ton compte (téléphone et mot de passe) est conservé.',
   ),
   FaqItem(
     'Puis-je utiliser MyBudget sans internet ?',
-    'Oui. Tu peux noter une dépense ou un revenu sans réseau : ils sont gardés sur ton téléphone et envoyés automatiquement dès que la connexion revient.',
+    'Oui. Tu peux noter une dépense ou un revenu sans réseau : ils sont gardés sur ton téléphone et envoyés automatiquement dès que la connexion revient. Si tes dernières opérations n’apparaissent pas, patiente un instant : elles reviennent à la reconnexion.',
   ),
   FaqItem(
     'Mes données sont-elles privées ?',
@@ -56,10 +60,6 @@ const List<FaqItem> faqItems = [
   FaqItem(
     'Comment exporter mes données ?',
     'Profil → « Exporter mes transactions » génère un fichier PDF avec tout ton historique, que tu peux partager ou garder. Un export CSV existe aussi pour réutiliser tes données dans un tableur.',
-  ),
-  FaqItem(
-    'Mes dernières opérations n’apparaissent pas, que faire ?',
-    'Si tu viens de les saisir sans connexion, patiente : elles reviennent automatiquement dès que ton téléphone est connecté. Sinon, rouvre l’écran concerné pour l’actualiser.',
   ),
   FaqItem(
     'J’ai oublié mon mot de passe, que faire ?',

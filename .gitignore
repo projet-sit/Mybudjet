@@ -17,6 +17,7 @@ mobile/flutter_*.log
 *.apk
 flutter-apk/
 mobile/build/debug-info/
+mobile/android/.kotlin/
 
 # Node
 node_modules/

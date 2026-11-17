@@ -100,4 +100,16 @@ async function deleteMe(req, res, next) {
   }
 }
 
-module.exports = { register, login, refresh, logout, forgotPassword, resetPassword, me, updateMe, deleteMe };
+async function resetMe(req, res, next) {
+  try {
+    // Uniquement pour les tests : force une erreur avant le commit.
+    const failBeforeCommit =
+      process.env.NODE_ENV === 'test' && req.headers['x-test-fail-reset'] === '1';
+    const result = await authService.resetData(req.uid, { failBeforeCommit });
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { register, login, refresh, logout, forgotPassword, resetPassword, me, updateMe, deleteMe, resetMe };

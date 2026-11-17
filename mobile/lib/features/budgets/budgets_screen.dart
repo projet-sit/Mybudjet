@@ -4,9 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
-import '../../models/categories.dart';
+import '../../models/category.dart';
 import '../../models/dashboard.dart';
 import '../../providers/app_prefs_provider.dart';
+import '../../providers/category_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 
@@ -329,10 +330,8 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
   Future<void> _createBudgetDialog() async {
     final existing = ref.read(budgetsControllerProvider).value ?? const <Budget>[];
     final used = existing.map((b) => b.category).toSet();
-    final available = [
-      for (final (name, _) in ExpenseCategories.list)
-        if (!used.contains(name)) name,
-    ];
+    final categories = ref.read(expenseCategoriesProvider);
+    final available = categories.where((c) => !used.contains(c.name)).toList();
     if (available.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Un budget existe déjà pour chaque catégorie.')),
@@ -340,7 +339,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       return;
     }
 
-    final result = await showDialog<({String category, int amount})>(
+    final result = await showDialog<({String category, String? categoryId, int amount})>(
       context: context,
       builder: (dialogContext) {
         var category = available.first;
@@ -351,10 +350,10 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
+                DropdownButtonFormField<Category>(
                   initialValue: category,
                   items: [
-                    for (final name in available) DropdownMenuItem(value: name, child: Text(name)),
+                    for (final item in available) DropdownMenuItem(value: item, child: Text(item.name)),
                   ],
                   onChanged: (value) => setDialogState(() => category = value ?? category),
                 ),
@@ -376,7 +375,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                 onPressed: () {
                   final amount = int.tryParse(amountController.text.replaceAll(' ', ''));
                   if (amount == null || amount <= 0) return;
-                  Navigator.pop(dialogContext, (category: category, amount: amount));
+                  Navigator.pop(dialogContext, (category: category.name, categoryId: category.id, amount: amount));
                 },
                 child: const Text('Créer'),
               ),
@@ -387,9 +386,11 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
     );
     if (result != null) {
       try {
-        await ref
-            .read(budgetsControllerProvider.notifier)
-            .create(category: result.category, limitAmount: result.amount);
+        await ref.read(budgetsControllerProvider.notifier).create(
+              category: result.category,
+              limitAmount: result.amount,
+              categoryId: result.categoryId,
+            );
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

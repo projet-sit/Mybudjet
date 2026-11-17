@@ -128,7 +128,9 @@ Render interroge ce chemin pour déterminer « live » vs « failed deploy ».
 
 ## Migrations au démarrage
 
-`migrate.js` lit `schema_migrations` et applique les fichiers manquants (001→009) dans l'ordre. Ne jamais modifier une migration déjà appliquée ; ajouter 010+ si besoin. Les migrations sont jouées avant le serveur : en cas d'échec, le deploy échoue au démarrage (visible dans les logs Render).
+`migrate.js` lit `schema_migrations` et applique les fichiers manquants (001→010) dans l'ordre. Ne jamais modifier une migration déjà appliquée ; ajouter 011+ si besoin. **Migration 010 (catégories personnalisées)** : additive et sans perte — création de `categories` + colonnes `category_id` + `users.data_epoch`, rattachement des catégories historiques (`backfill_categories.js`, idempotent, exécuté automatiquement par `migrate`). **Ne jamais la lancer manuellement contre la production depuis un poste de dev** : elle s'applique automatiquement au prochain déploiement Render (`node src/database/migrate.js && node src/server.js`), ou sur demande explicite du mainteneur.
+
+Les migrations sont jouées avant le serveur : en cas d'échec, le deploy échoue au démarrage (visible dans les logs Render).
 
 ## Logs et monitoring
 

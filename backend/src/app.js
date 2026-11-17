@@ -12,6 +12,8 @@ const statsRoutes = require('./routes/stats');
 const budgetRoutes = require('./routes/budgets');
 const periodRoutes = require('./routes/periods');
 const goalRoutes = require('./routes/goals');
+const categoryRoutes = require('./routes/categories');
+const meRoutes = require('./routes/me');
 const cielRoutes = require('./routes/cielRoutes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 
@@ -49,6 +51,8 @@ app.use('/api/v1', cielRoutes);
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/client-errors', require('./routes/clientErrors'));
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/me', meRoutes);
+app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/wallets', walletRoutes);
 app.use('/api/v1/wallets', transactionRoutes);
 app.use('/api/v1/wallets', statsRoutes);

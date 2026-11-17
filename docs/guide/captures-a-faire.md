@@ -16,6 +16,8 @@ Le guide (`docs/guide/guide-utilisateur.md`) utilise des repères `[Capture : �
 | 10 | `guide/img/supprimer.png` | Boîte de suppression de compte | Sans données sensibles |
 | 11 | `guide/img/faq.png` | Profil → Aide et FAQ, une question ouverte | Nouvel écran |
 | 12 | `guide/img/synchro.png` | Badge « Synchronisé / En attente / Hors-ligne » | Mode avion utile |
+| 13 | `guide/img/mes-categories.png` | Profil → Mes catégories, liste avec une catégorie personnalisée | ex. Coiffure — exemple fictif |
+| 14 | `guide/img/reinitialiser.png` | Écran « Réinitialiser tout » avec le champ REINITIALISER | Écran plein, sans données sensibles |
 
 **Contraste :** captures bien lisibles, sans nom ni montant réel d'une vraie personne.
 **Nommage :** kebab-case, dossier `docs/guide/img/`.

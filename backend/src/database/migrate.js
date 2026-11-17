@@ -36,6 +36,14 @@ async function migrate() {
     count++;
   }
 
+  // Rattrapage idempotent des catégories historiques (nécessite Node, pas du SQL brut).
+  const { backfillCategories } = require('./backfill_categories');
+  const stats = await backfillCategories();
+  console.log(
+    `[backfill] transactions : ${stats.txMatched} rattachées (${stats.txCreated} catégories créées) · ` +
+    `budgets : ${stats.budgetsMatched} rattachés (${stats.budgetsCreated} catégories créées)`
+  );
+
   if (count === 0) console.log('[migrate] aucune migration en attente');
   await db.pool.end();
 }

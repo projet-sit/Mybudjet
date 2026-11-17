@@ -156,6 +156,23 @@ class AuthRepository {
     await clearSession();
   }
 
+  /// Réinitialisation complète du compte : supprime TOUTES les données côté
+  /// serveur (une seule transaction), puis recharge le profil — ce qui retourne
+  /// le nouveau data_epoch — et met à jour la session locale.
+  /// Les jetons restent valides (session conservée).
+  Future<AuthSession> resetAccount() async {
+    await _postWithWakeRetry('/me/reset', {});
+    final user = await me();
+    final session = await _storage.loadSession();
+    if (session == null) throw Exception('Session introuvable');
+    final refreshed = AuthSession(
+      user: user,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+    );
+    return persistSession(refreshed);
+  }
+
   /// Efface la session locale ET le cache du portefeuille (déconnexion, 401, suppression).
   Future<void> clearSession() async {
     ApiClient.instance.setAccessToken(null);

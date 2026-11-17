@@ -5,6 +5,7 @@ class Transaction {
     required this.type,
     required this.amount,
     required this.category,
+    this.categoryId,
     this.description,
     required this.date,
     required this.time,
@@ -16,6 +17,9 @@ class Transaction {
   final String type; // 'expense' | 'income' | 'savings_deposit' | 'savings_withdrawal'
   final int amount; // entiers uniquement
   final String category;
+  /// Id de la catégorie en base (défaut ou personnalisée). Null pour les
+  /// anciens enregistrements / la génération locale hors-ligne.
+  final String? categoryId;
   final String? description;
   final String date; // YYYY-MM-DD
   final String time; // HH:mm
@@ -34,6 +38,7 @@ class Transaction {
       type: (json['type'] ?? 'expense') as String,
       amount: asInt(json['amount']),
       category: (json['category'] ?? '') as String,
+      categoryId: json['categoryId'] as String?,
       description: json['description'] as String?,
       // Tolère d'anciens caches avec un suffixe d'heure : on garde le jour civil.
       date: ((json['date'] ?? '') as String).trim().length >= 10
@@ -57,6 +62,7 @@ class Transaction {
         'type': type,
         'amount': amount,
         'category': category,
+        if (categoryId != null) 'categoryId': categoryId,
         if (description != null && description!.isNotEmpty) 'description': description,
         'date': date,
         'time': time,
@@ -70,11 +76,38 @@ class Transaction {
         'type': type,
         'amount': amount,
         'category': category,
+        if (categoryId != null) 'categoryId': categoryId,
         if (description != null) 'description': description,
         'date': date,
         'time': time,
         if (paymentMethod != null) 'paymentMethod': paymentMethod,
       };
+
+  Transaction copyWith({
+    String? id,
+    String? walletId,
+    String? type,
+    int? amount,
+    String? category,
+    String? categoryId,
+    String? description,
+    String? date,
+    String? time,
+    String? paymentMethod,
+  }) {
+    return Transaction(
+      id: id ?? this.id,
+      walletId: walletId ?? this.walletId,
+      type: type ?? this.type,
+      amount: amount ?? this.amount,
+      category: category ?? this.category,
+      categoryId: categoryId ?? this.categoryId,
+      description: description ?? this.description,
+      date: date ?? this.date,
+      time: time ?? this.time,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+    );
+  }
 }
 
 class TransactionPage {

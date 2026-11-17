@@ -67,7 +67,7 @@ async function byCategory(walletId, { dateFrom, dateTo, type = 'expense' } = {})
   const { rows } = await query(
     `SELECT category, SUM(amount) AS total, COUNT(*) AS count
      FROM transactions WHERE ${conditions.join(' AND ')}
-     GROUP BY category ORDER BY total DESC`,
+     GROUP BY category_id, category ORDER BY total DESC`,
     params
   );
   return rows.map((r) => ({ category: r.category, total: Number(r.total), count: Number(r.count) }));

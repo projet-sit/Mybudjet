@@ -11,6 +11,7 @@ function toTransaction(row) {
     type: row.type,
     amount: Number(row.amount),
     category: row.category,
+    categoryId: row.category_id ?? null,
     description: row.description,
     date: toDateOnly(row.date),
     time: row.time,
@@ -121,7 +122,7 @@ async function withdrawAllSavings({ walletId, date, time }) {
  * 4. met à jour le solde,
  * le tout dans une seule transaction SQL (commit/rollback ensemble).
  */
-async function createTransaction({ walletId, type, amount, category, description, date, time, paymentMethod }) {
+async function createTransaction({ walletId, type, amount, category, categoryId, description, date, time, paymentMethod }) {
   return withTransaction(async (client) => {
     const locked = await client.query(
       'SELECT id, user_id, balance, savings_amount, start_date FROM wallets WHERE id = $1 FOR UPDATE',
@@ -143,10 +144,10 @@ async function createTransaction({ walletId, type, amount, category, description
     }
 
     const { rows } = await client.query(
-      `INSERT INTO transactions (wallet_id, period_id, type, amount, category, description, date, time, payment_method)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO transactions (wallet_id, period_id, type, amount, category, category_id, description, date, time, payment_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [walletId, period.id, type, amount, category, description, date, time, paymentMethod]
+      [walletId, period.id, type, amount, category, categoryId ?? null, description, date, time, paymentMethod]
     );
     const transaction = toTransaction(rows[0]);
 
@@ -164,7 +165,7 @@ async function createTransaction({ walletId, type, amount, category, description
  * Modifie une transaction de façon ATOMIQUE :
  * le solde est corrigé par le delta entre l'ancienne et la nouvelle contribution.
  */
-async function updateTransaction({ walletId, txId, type, amount, category, description, date, time, paymentMethod }) {
+async function updateTransaction({ walletId, txId, type, amount, category, categoryId, description, date, time, paymentMethod }) {
   return withTransaction(async (client) => {
     const locked = await client.query(
       'SELECT balance, savings_amount FROM wallets WHERE id = $1 FOR UPDATE',
@@ -201,11 +202,11 @@ async function updateTransaction({ walletId, txId, type, amount, category, descr
 
     const { rows } = await client.query(
       `UPDATE transactions
-       SET type = $2, amount = $3, category = $4, description = $5,
-           date = $6, time = $7, payment_method = $8, updated_at = now()
+       SET type = $2, amount = $3, category = $4, category_id = COALESCE($5::uuid, category_id),
+           description = $6, date = $7, time = $8, payment_method = $9, updated_at = now()
        WHERE id = $1
        RETURNING *`,
-      [txId, type, amount, category, description, date, time, paymentMethod]
+      [txId, type, amount, category, categoryId ?? null, description, date, time, paymentMethod]
     );
     const transaction = toTransaction(rows[0]);
 

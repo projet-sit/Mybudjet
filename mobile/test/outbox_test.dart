@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mybudget/models/transaction.dart';
 import 'package:mybudget/models/wallet.dart';
 import 'package:mybudget/services/api_client.dart';
+import 'package:mybudget/services/category_repository.dart';
 import 'package:mybudget/services/outbox.dart';
 
 class _FakeAdapter implements HttpClientAdapter {
@@ -264,123 +265,200 @@ void main() {
     });
   });
 
-  group('remise à zéro', () {
-    test('mise en attente hors-ligne puis rejouée au retour du réseau', () async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cache_wallet', jsonEncode(_wallet(balance: 80000, savings: 30000).toJson()));
-
-      await Outbox.instance.applyResetLocally('w1', includeSavings: false);
-      await Outbox.instance.enqueueReset('w1', includeSavings: false);
-      expect(await Outbox.instance.count(), 1);
-
-      final posted = <Map<String, dynamic>>[];
+  group('catégories personnalisées (hors-ligne puis synchronisation)', () {
+    test('création hors-ligne : mise en cache + en file d’attente', () async {
+      SharedPreferences.setMockInitialValues({});
       dio.httpClientAdapter = _FakeAdapter((options) async {
-        // Le serveur "v2" répond 200 au HEAD /periods (détection côté outbox).
-        if (options.method == 'HEAD' && options.path.endsWith('/periods')) {
-          return _json({}, 200);
-        }
-        if (options.path.endsWith('/reset')) {
-          posted.add(Map<String, dynamic>.from(options.data as Map));
-          return _json({
-            'data': {
-              'period': {
-                'id': 'p2',
-                'walletId': 'w1',
-                'startDate': '2026-11-15',
-                'endDate': '2026-11-30',
-                'status': 'active',
-              },
-              'wallet': {
-                'id': 'w1',
-                'userId': 'u1',
-                'name': 'Mon budget',
-                'initialAmount': 30000,
-                'startDate': '2026-11-15',
-                'currency': 'XOF',
-                'balance': 30000,
-                'savingsAmount': 30000,
-              },
-              'previousPeriodId': 'p1',
-              'mode': 'reset',
-              'undoExpiresAt': '2026-11-15T00:00:10.000Z',
-            },
-          });
-        }
         throw DioException(
           requestOptions: options,
           type: DioExceptionType.connectionError,
+          error: const SocketException('offline'),
         );
       });
 
+      final created = await Outbox.instance.createCategoryOfflineAware(
+        type: 'expense',
+        name: 'Coiffure',
+        walletId: 'w1',
+      );
+      expect(created.name, 'Coiffure');
+      expect(await Outbox.instance.count(), 1);
+
+      final cached = await CategoryRepository.instance.loadCache();
+      expect(cached.map((c) => c.name), contains('Coiffure'));
+    });
+
+    test('le flush rejoue la création avec le même id client', () async {
+      SharedPreferences.setMockInitialValues({});
+      var backendUp = false;
+      final posted = <Map<String, dynamic>>[];
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        if (!backendUp) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionError,
+            error: const SocketException('offline'),
+          );
+        }
+        posted.add(Map<String, dynamic>.from(options.data as Map));
+        return _json({
+          'data': {
+            'category': {'id': posted.last['id'], 'name': 'Coiffure', 'type': 'expense', 'isDefault': false, 'iconKey': 'label'},
+            'fused': false,
+          },
+        }, 201);
+      });
+
+      await Outbox.instance.createCategoryOfflineAware(type: 'expense', name: 'Coiffure', walletId: 'w1');
+      backendUp = true;
       final result = await Outbox.instance.flush();
       expect(result.replayed, 1);
       expect(result.hasFailures, isFalse);
       expect(posted, hasLength(1));
-      expect(posted.first['includeSavings'], isFalse);
+      expect(posted.first['id'], isNotNull);
+      expect(posted.first['name'], 'Coiffure');
       expect(await Outbox.instance.count(), 0);
     });
 
-    test('serveur obsolète (sans API périodes) : un reset en attente n’est PAS rejoué', () async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cache_wallet', jsonEncode(_wallet(balance: 80000, savings: 30000).toJson()));
-
-      await Outbox.instance.applyResetLocally('w1', includeSavings: true);
-      await Outbox.instance.enqueueReset('w1', includeSavings: true);
-      expect(await Outbox.instance.count(), 1);
-
-      // Serveur ancien : HEAD /periods → 404.
+    test('fusion : 409 CATEGORY_EXISTS avec la catégorie existante = succès (pas de doublon)', () async {
+      SharedPreferences.setMockInitialValues({});
+      var backendUp = false;
       dio.httpClientAdapter = _FakeAdapter((options) async {
-        if (options.method == 'HEAD' && options.path.endsWith('/periods')) {
-          return _json({}, 404);
+        if (!backendUp) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionError,
+            error: const SocketException('offline'),
+          );
         }
-        return _json({'error': {'message': 'introuvable'}}, 404);
+        return _json({
+          'success': false,
+          'error': {
+            'code': 'CATEGORY_EXISTS',
+            'message': 'Cette catégorie existe déjà, elle est sélectionnée',
+            'details': {
+              'category': {'id': 'cat-server-1', 'name': 'Coiffure', 'type': 'expense', 'isDefault': false, 'iconKey': 'label'},
+            },
+          },
+        }, 409);
       });
 
+      await Outbox.instance.createCategoryOfflineAware(type: 'expense', name: 'Coiffure', walletId: 'w1');
+      backendUp = true;
       final result = await Outbox.instance.flush();
-      expect(result.replayed, 0);
-      expect(await Outbox.instance.count(), 1, reason: 'le reset doit rester en attente, jamais rejoué sur un serveur qui détruit tout');
+      expect(result.replayed, 1);
+      expect(result.hasFailures, isFalse);
+      expect(await Outbox.instance.count(), 0);
     });
 
-    test('conserve l’épargne par défaut, la remet à zéro sur demande', () async {
-      for (final includeSavings in [false, true]) {
-        SharedPreferences.setMockInitialValues({});
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('cache_wallet', jsonEncode(_wallet(balance: 80000, savings: 30000).toJson()));
-        await prefs.setString(
-          'cache_dashboard_w1',
-          jsonEncode({
-            'walletId': 'w1',
-            'walletName': 'Mon budget',
-            'currency': 'XOF',
-            'balance': 80000,
-            'initialAmount': 80000,
-            'totalExpenses': 20000,
-            'totalIncomes': 50000,
-            'transactionsCount': 12,
-            'percentUsed': 25,
-            'weeklySeries': <Map<String, dynamic>>[],
-            'latestTransactions': <Map<String, dynamic>>[],
-          }),
-        );
-        await prefs.setString('cache_txs_w1', jsonEncode([_expense().toJson()]));
-
-        await Outbox.instance.applyResetLocally('w1', includeSavings: includeSavings);
-
-        final wallet = jsonDecode(prefs.getString('cache_wallet')!) as Map<String, dynamic>;
-        final dashboard = jsonDecode(prefs.getString('cache_dashboard_w1')!) as Map<String, dynamic>;
-        if (includeSavings) {
-          expect(wallet['balance'], 0);
-          expect(wallet['savingsAmount'], 0);
-        } else {
-          expect(wallet['balance'], 30000, reason: 'Reste = 0, épargne conservée');
-          expect(wallet['savingsAmount'], 30000);
+    test('fusion + transaction hors-ligne : l’id serveur est propagé aux opérations en attente', () async {
+      SharedPreferences.setMockInitialValues({});
+      var backendUp = false;
+      final postedTx = <Map<String, dynamic>>[];
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        if (!backendUp) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionError,
+            error: const SocketException('offline'),
+          );
         }
-        expect(dashboard['totalExpenses'], 0);
-        expect(dashboard['totalIncomes'], 0);
-        expect(dashboard['transactionsCount'], 0);
-        expect(prefs.getString('cache_txs_w1'), isNull, reason: 'opérations archivées côté local');
-        expect(await Outbox.instance.count(), 0);
-      }
+        if (options.path.endsWith('/categories')) {
+          // Fusion : le serveur renvoie SA catégorie existante (id différent).
+          return _json({
+            'success': false,
+            'error': {
+              'code': 'CATEGORY_EXISTS',
+              'message': 'Cette catégorie existe déjà, elle est sélectionnée',
+              'details': {
+                'category': {'id': 'cat-server-1', 'name': 'Coiffure', 'type': 'expense', 'isDefault': false, 'iconKey': 'label'},
+              },
+            },
+          }, 409);
+        }
+        if (options.path.endsWith('/transactions')) {
+          postedTx.add(Map<String, dynamic>.from(options.data as Map));
+          return _json({'data': {'transaction': {'id': 'tx-1'}, 'newBalance': 95000}}, 201);
+        }
+        return _json({}, 404);
+      });
+
+      // 1. Création de catégorie hors-ligne (id client A).
+      final created = await Outbox.instance.createCategoryOfflineAware(
+        type: 'expense',
+        name: 'Coiffure',
+        walletId: 'w1',
+      );
+      final clientId = created.id;
+
+      // 2. Création d'une transaction hors-ligne sur cette catégorie.
+      final txCreate = await Outbox.instance.createTransaction(
+        'w1',
+        Transaction(
+          id: '',
+          walletId: 'w1',
+          type: 'expense',
+          amount: 3000,
+          category: 'Coiffure',
+          categoryId: clientId,
+          date: '2026-11-17',
+          time: '08:00',
+        ),
+      );
+      expect(txCreate.queued, isTrue);
+      expect(await Outbox.instance.count(), 2);
+
+      // 3. Synchronisation : la catégorie fusionne, le tx relaie le nouvel id.
+      backendUp = true;
+      final result = await Outbox.instance.flush();
+      expect(result.replayed, 2);
+      expect(result.hasFailures, isFalse);
+      expect(postedTx, hasLength(1));
+      expect(postedTx.single['categoryId'], 'cat-server-1');
+    });
+
+    test('doublon serveur sans détails : la catégorie optimiste est annulée (rollback)', () async {
+      SharedPreferences.setMockInitialValues({});
+      var backendUp = false;
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        if (!backendUp) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionError,
+            error: const SocketException('offline'),
+          );
+        }
+        return _json({
+          'success': false,
+          'error': {'code': 'CATEGORY_EXISTS', 'message': 'Conflit'},
+        }, 409);
+      });
+
+      await Outbox.instance.createCategoryOfflineAware(type: 'expense', name: 'Coiffure', walletId: 'w1');
+      backendUp = true;
+      final result = await Outbox.instance.flush();
+      expect(result.hasFailures, isTrue);
+      final cached = await CategoryRepository.instance.loadCache();
+      expect(cached.map((c) => c.name), isNot(contains('Coiffure')));
+    });
+
+    test('clearAll vide toute la file (réinitialisation complète)', () async {
+      SharedPreferences.setMockInitialValues({});
+      dio.httpClientAdapter = _FakeAdapter((options) async {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          error: const SocketException('offline'),
+        );
+      });
+
+      await Outbox.instance.createTransaction('w1', _expense());
+      await Outbox.instance.createCategoryOfflineAware(type: 'expense', name: 'Coiffure');
+      expect(await Outbox.instance.count(), 2);
+
+      await Outbox.instance.clearAll();
+      expect(await Outbox.instance.count(), 0);
+      expect(await Outbox.instance.pendingTransactions(), isEmpty);
     });
   });
 }

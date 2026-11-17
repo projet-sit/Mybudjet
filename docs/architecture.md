@@ -47,9 +47,9 @@ flowchart LR
 
 | Couche | Dossier | Rôle |
 |---|---|---|
-| Présentation | `lib/features/**` (auth, home, history, stats, budgets, savings, reset, profile, help, shell, onboarding) | Écrans Material 3, thème clair/sombre (`AppTheme`), texte français simple |
-| État / application | `lib/providers/**` (Riverpod v3) | `AuthController`, `WalletController`, `TransactionsController`, `DashboardController`, `StatsController`, `BudgetsController`, `SyncController`, `OnboardingSeenNotifier`, `ThemeController`, `AlertsController`, `ShellTabController` |
-| Données | `lib/services/**` | `ApiClient` (Dio, intercepteurs auth/retry), `TransactionRepository`/`DataRepository`/`WalletRepository`/`PeriodRepository`, `Outbox` (file d'attente), `CacheService` (SharedPreferences), `TokenStorage`, `ErrorReporter` |
+| Présentation | `lib/features/**` (auth, home, history, stats, budgets, savings, reset, profile, help, categories, shell, onboarding) | Écrans Material 3, thème clair/sombre (`AppTheme`), texte français simple |
+| État / application | `lib/providers/**` (Riverpod v3) | `AuthController`, `WalletController`, `TransactionsController`, `DashboardController`, `StatsController`, `BudgetsController`, `SyncController`, `CategoryController`, `OnboardingSeenNotifier`, `ThemeController`, `AlertsController`, `ShellTabController` |
+| Données | `lib/services/**` | `ApiClient` (Dio, intercepteurs auth/retry), `TransactionRepository`/`DataRepository`/`WalletRepository`, `CategoryRepository`, `BudgetAlertsService` (notifications locales), `Outbox` (file d'attente), `CacheService` (SharedPreferences), `TokenStorage`, `ErrorReporter` |
 | Modèles | `lib/models/**` | `Wallet`, `Transaction`, `User`, `AuthSession`, `DashboardData`, `StatsData`, `Budget`, `BudgetPeriod`… Montants entiers FCFA |
 | Transverse | `lib/core/**` | Thème, `date_format.dart` (JJ/MM/AAAA local), `money.dart` (`formatXof`), `search/` (recherche insensible accents), widgets partagés |
 | Navigation | `lib/routing/**` | `app_router.dart` (GoRouter + `refreshListenable`), `app_redirect.dart` (fonction pure de redirection) |
@@ -122,8 +122,8 @@ Dépendances de production : `flutter_riverpod`, `go_router`, `dio`, `intl`, `fl
 ## Ce qui n'existe PAS
 
 - Firebase (Auth, Firestore, FCM, Crashlytics) — abandonné en novembre 2026. Voir `docs/PHASE1_ARCHITECTURE.md`.
-- Détection automatique des transactions par notifications Android — non implémentée (voir `docs/detection-notifications.md`).
-- Notification push réelle pour les alertes de budget — l'interrupteur « Alertes de budget » est un booléen local (`budget_alerts`), il n'envoie rien.
+- Détection automatique des transactions par notifications Android (lecture des notifs Mobile Money) — non implémentée (voir `docs/detection-notifications.md`).
+- Les alertes de budget sont des **notifications locales** (jamais d'envoi serveur), une seule fois par seuil (80 % / 100 %) et par période ; l'interrupteur « Alertes de budget » du profil les coupe ou les demande (permission Android 13 `POST_NOTIFICATIONS`).
 - Routes Ciel (`/stats/monthly`, `/export/*`, `/alerts/check`) : héritage d'un client « ciel.app ». Les requêtes SQL internes référencent des colonnes inexistantes et renvoient silencieusement des résultats vides ; `firebase-admin` n'étant pas installé, `verifyIdToken` retombe sur un fallback JWT/test. **À considérer comme obsolètes.**
 - `web/` et `ios/` existent (scaffolds) mais ne sont pas maintenus ni testés.
 

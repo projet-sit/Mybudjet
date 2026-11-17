@@ -74,7 +74,10 @@ Dans la vie quotidienne, l'argent sort vite : transports, restauration, transfer
 | F11 | Objectifs d'épargne | Cibles, contributions, échéance, statut | Could |
 | F12 | Export | PDF (app) / CSV (API) | Could |
 | F13 | Aide et FAQ | 15 questions en accordéon, hors-ligne | Should |
-| F14 | Hors-ligne | File d'attente + synchronisation au retour | Must |
+| F14 | Hors-ligne | File d'attente + synchronisation au retour (id client UUID, fusion catégories) | Must |
+| F15 | Catégories personnalisées | Création via « Autres », renommage, suppression (réaffectation à « Autres »), 30 max par type, hors-ligne | Should |
+| F16 | Réinitialisation complète | Compte « comme neuf » (atomique, `data_epoch`, multi-appareils) | Must |
+| F17 | Alertes de budget réelles | Notification locale à 80 %/100 %, une fois par seuil et période | Should |
 
 ## Besoins non fonctionnels
 
@@ -104,12 +107,14 @@ Acteur principal : **Utilisateur**. Les cas UC1→UC11 couvrent tout le cycle d'
 
 ![MCD](diagrams/modele-de-donnees.png)
 
-**Entités** : `users`, `wallets`, `transactions`, `budgets`, `periods`, `goals`, `initial_amount_history`, `refresh_tokens`, `password_reset_tokens`.
+**Entités** : `users`, `wallets`, `transactions`, `budgets`, `periods`, `goals`, `categories`, `initial_amount_history`, `refresh_tokens`, `password_reset_tokens`.
 
 **Associations** :
 
 - `UTILISATEUR possède WALLET` (1,n) — un wallet appartient à un seul utilisateur.
+- `UTILISATEUR personnalise CATEGORIE` (0,n) — `is_default=false` ; les défauts sont systèmes (user_id NULL).
 - `WALLET enregistre TRANSACTION` (1,n) — une transaction appartient à un wallet et (optionnellement) à une période.
+- `TRANSACTION classe CATEGORIE` (1,1) — via `category_id` (nullable avant migration).
 - `WALLET plafonne BUDGET` (1,n) — un budget par (wallet, catégorie).
 - `WALLET archive PERIOD` (1,n) — une seule période active ; les précédentes sont archivées avec snapshot JSON.
 - `WALLET vise GOAL` (1,n) — les objectifs partagent le pot d'épargne du wallet.
@@ -119,15 +124,16 @@ Acteur principal : **Utilisateur**. Les cas UC1→UC11 couvrent tout le cycle d'
 Héritage : toutes les tables portent `id UUID PK`, `created_at`/`updated_at` sauf `refresh_tokens`/`password_reset_tokens` (vue tokens) et `initial_amount_history` (journal).
 
 ```
-users(id, display_name, email, phone, password_hash, photo_url, currency, created_at, updated_at)
+users(id, display_name, email, phone, password_hash, photo_url, currency, data_epoch, created_at, updated_at)
 refresh_tokens(id, user_id→users, token_hash, expires_at, revoked_at, created_at)
 password_reset_tokens(id, user_id→users, token_hash, expires_at, used_at, created_at)
 wallets(id, user_id→users, name, initial_amount, balance, savings_amount, start_date, currency, created_at, updated_at)
 initial_amount_history(id, wallet_id→wallets, old_value, new_value, changed_at)
-transactions(id, wallet_id→wallets, period_id→periods, type, amount, category, description, date, time, payment_method, created_at, updated_at)
-budgets(id, user_id→users, wallet_id→wallets, category, limit_amount, period, UNIQUE(wallet_id, category), created_at, updated_at)
+transactions(id, wallet_id→wallets, period_id→periods, type, amount, category, category_id→categories, description, date, time, payment_method, created_at, updated_at)
+budgets(id, user_id→users, wallet_id→wallets, category, category_id→categories, limit_amount, period, UNIQUE(wallet_id, category), created_at, updated_at)
 periods(id, user_id→users, wallet_id→wallets, start_date, end_date, status, snapshot JSONB, created_at, closed_at)
 goals(id, user_id→users, wallet_id→wallets, name, target_amount, saved_amount, deadline, status, created_at, updated_at)
+categories(id, user_id→users NULL, type, name, normalized_name, is_default, icon_key, created_at)
 ```
 
 ## Diagramme de classes
@@ -173,8 +179,8 @@ Règle clé : `Wallet.available() = max(0, balance − savingsAmount)`. Les six 
 
 ## Tests
 
-- **Mobile** : 61 tests passent + 2 skippés (`flutter test`) : redirections (`app_redirect`), onboarding, overflow 360×640, outbox (rollback 4xx, conservation réseau), recherche, PDF, FAQ (3 tests ajoutés pour l'écran « Aide et FAQ »).
-- **Backend** : 9 unitaires + 6 e2e (`pg-mem`, vrai `app.js` en mémoire) + 1 batterie « serveur réel » skippée par défaut (`npm run test:integration`).
+- **Mobile** : 82 tests passent (`flutter test`) : redirections (`app_redirect`), onboarding, overflow 360×640, outbox (rollback 4xx, conservation réseau, catégories hors-ligne), recherche, PDF, FAQ, réinitialisation (écran), alertes de budget (7 tests), noms de catégories (8 tests).
+- **Backend** : 9 unitaires + 10 e2e (`pg-mem`, vrai `app.js` en mémoire) + 1 test d'atomicité sur vraie PostgreSQL (`npm run test:rollback`) + 1 batterie « serveur réel » skippée par défaut (`npm run test:integration`).
 - **Recette manuelle** : `docs/TESTS_HORS_LIGNE.md` + section « Recette manuelle » de `docs/tests.md`.
 
 ## Limites et perspectives
@@ -182,12 +188,13 @@ Règle clé : `Wallet.available() = max(0, balance − savingsAmount)`. Les six 
 **Limites connues :**
 
 1. Pas de détection automatique des transactions (Mobile Money) — saisie manuelle uniquement.
-2. Pas de notification push réelle ; « Alertes de budget » = simple préférence locale.
+2. Alertes de budget uniquement locales (notification système) ; pas de notification push serveur.
 3. Plan gratuit Render : mise en veille ~15 min, cold start 30–60 s.
-4. `period/next` et `daysLeft`/`needsNewPeriod` existent côté serveur/modèles mais aucun écran de rollover de mois n'est branché — la remise à zéro est manuelle.
+4. Les routes périodes (`/wallets/:id/period*`, undo 10 s, restauration) existent sur l'API mais l'app n'appelle plus que la réinitialisation complète — l'annulation 10 s n'est plus exposée dans l'UI.
 5. Routes « Ciel » obsolètes montées sur `/` et `/api/v1` — à désactiver.
 6. iOS/web non maintenus ; APK uniquement (arm64).
 7. Pas de synchronisation multi-appareil temps réel ; la dernière écriture serveur gagne.
+8. Catégories : maximum 30 personnalisées par type ; renommage limité aux personnalisées.
 
 **Perspectives :**
 
@@ -212,4 +219,6 @@ Règle clé : `Wallet.available() = max(0, balance − savingsAmount)`. Les six 
 | JWT | Jeton signé (access 1 h, refresh 30 j hashé) authentifiant les appels API |
 | MCD / MLD | Modèle conceptuel / logique de données (méthode Merise) |
 | Snapshot | État sérialisé (JSONB) d'une période au moment de sa clôture |
+| data_epoch | Compteur serveur (users.data_epoch) incrémenté à chaque réinitialisation ; signal multi-appareils d'effacement de cache |
+| category_id | Lien vers la catégorie (défaut système ou personnalisée utilisateur) |
 | pg-mem | Émulateur PostgreSQL en mémoire utilisé par les tests e2e |

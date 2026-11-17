@@ -11,6 +11,7 @@ import '../features/shell/main_shell.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/help/help_screen.dart';
+import '../features/categories/my_categories_screen.dart';
 import '../features/stats/stats_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/onboarding_provider.dart';
@@ -57,6 +58,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/savings', builder: (context, state) => const SavingsScreen()),
       GoRoute(path: '/stats', builder: (context, state) => const StatsScreen()),
       GoRoute(path: '/help', builder: (context, state) => const HelpScreen()),
+      GoRoute(path: '/my-categories', builder: (context, state) => const MyCategoriesScreen()),
     ],
     errorBuilder: (context, state) => Scaffold(
       appBar: AppBar(title: const Text('Page introuvable')),

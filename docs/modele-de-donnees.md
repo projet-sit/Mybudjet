@@ -13,7 +13,7 @@
 
 ## Résumé
 
-MyBudget stocke **tout en PostgreSQL 16** : utilisateurs, portefeuilles, transactions, budgets, périodes, objectifs. Pas de Firestore. Montants en `BIGINT` (entiers FCFA), dates `DATE` (`YYYY-MM-DD`), horodatages `TIMESTAMPTZ` (UTC). Le schéma est créé par les migrations `backend/src/database/migrations/` (001→009 ; **004 absent**, 003 enchaîne sur 005).
+MyBudget stocke **tout en PostgreSQL 16** : utilisateurs, portefeuilles, transactions, budgets, périodes, objectifs, catégories. Pas de Firestore. Montants en `BIGINT` (entiers FCFA), dates `DATE` (`YYYY-MM-DD`), horodatages `TIMESTAMPTZ` (UTC). Le schéma est créé par les migrations `backend/src/database/migrations/` (001→010 ; **004 absent**, 003 enchaîne sur 005). La migration 010 ajoute les catégories personnalisées (`categories`), les liens `category_id` et la colonne `users.data_epoch` (cf. `src/database/backfill_categories.js` pour le rattachement des données historiques).
 
 ## Diagramme entité-association (erDiagram)
 
@@ -22,12 +22,25 @@ erDiagram
   users ||--o{ wallets : "possède"
   users ||--o{ refresh_tokens : "sessions"
   users ||--o{ password_reset_tokens : "reset"
+  users ||--o{ categories : "personnalisées"
   wallets ||--o{ transactions : "enregistre"
   wallets ||--o{ budgets : "plafonne"
   wallets ||--o{ periods : "archive"
   wallets ||--o{ goals : "objectif"
   wallets ||--o{ initial_amount_history : "historise"
   transactions }o--o| periods : "rattachée à"
+  transactions }o--o| categories : "catégorie"
+  budgets }o--o| categories : "catégorie"
+
+  categories {
+    uuid id PK
+    uuid user_id FK "NULL si catégorie système"
+    varchar type "expense|income"
+    varchar name "2-30 car."
+    varchar normalized_name "minuscules, sans accents"
+    boolean is_default
+    varchar icon_key
+  }
 
   users {
     uuid id PK
@@ -87,7 +100,7 @@ erDiagram
 
 ## Tables (schéma PostgreSQL réel)
 
-### users — migrations 001, 009
+### users — migrations 001, 009, 010
 | Champ | Type | Règle |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` |
@@ -97,6 +110,7 @@ erDiagram
 | `password_hash` | VARCHAR(255) | bcrypt |
 | `photo_url` | VARCHAR(500) | nullable |
 | `currency` | VARCHAR(8) | NOT NULL, défaut `XOF` |
+| `data_epoch` | INTEGER | NOT NULL, défaut 0 ; **incrémenté à chaque réinitialisation complète** (010) |
 | `created_at` / `updated_at` | TIMESTAMPTZ | défaut `now()` |
 
 ### password_reset_tokens — migration 001
@@ -121,23 +135,37 @@ erDiagram
 ### initial_amount_history — migration 002
 `id` · `wallet_id` FK CASCADE · `old_value`/`new_value` BIGINT NOT NULL · `changed_at` TIMESTAMPTZ. 100 derniers par wallet (`GET /wallets/:id/initial-amount/history`).
 
-### transactions — migrations 003, 007, 008
+### transactions — migrations 003, 007, 008, 010
 | Champ | Type | Règle |
 |---|---|---|
 | `id` | UUID PK | |
 | `wallet_id` | UUID FK | CASCADE |
 | `period_id` | UUID FK → periods | nullable, ON DELETE SET NULL (007) |
-| `type` | VARCHAR(20) | CHECK `expense` · `income` · `savings_deposit` · `savings_withdrawal` (élargi en 008) |
+| `type` | VARCHAR(20) | CHECK `expense` · `income` · `savings_deposit` · `savings_withdrawal` |
 | `amount` | BIGINT | NOT NULL, CHECK > 0 |
-| `category` | VARCHAR(50) NOT NULL | liste blanche côté API (11 dépenses, 5 revenus, « Épargne » pour savings_*) |
+| `category` | VARCHAR(50) NOT NULL | texte dénormalisé (nom affiché, recherche, CSV) |
+| `category_id` | UUID FK → categories | nullable, ON DELETE SET NULL (010) |
 | `description` | VARCHAR(200) | optionnel |
 | `date` | DATE NOT NULL | `YYYY-MM-DD` |
 | `time` | VARCHAR(5) NOT NULL | `HH:mm` |
 | `payment_method` | VARCHAR(30) | `Espèces` · `Mobile Money` · `Carte` · `Virement` |
 | `created_at` / `updated_at` | TIMESTAMPTZ | |
 
-### budgets — migration 003
-`id` UUID PK · `user_id` FK · `wallet_id` FK · `category` VARCHAR(50) · `limit_amount` BIGINT CHECK > 0 · `period` VARCHAR(20) défaut `monthly` · **UNIQUE `(wallet_id, category)`** · timestamps.
+### categories — migration 010
+| Champ | Type | Règle |
+|---|---|---|
+| `id` | UUID PK | client peut fournir l'id (idempotence hors-ligne) |
+| `user_id` | UUID FK → users | nullable = catégorie système (par défaut) ; CASCADE sur suppression du compte |
+| `type` | VARCHAR(10) | CHECK `expense` · `income` |
+| `name` | VARCHAR(30) NOT NULL | lettres/chiffres/espaces/apostrophes/tirets |
+| `normalized_name` | VARCHAR(30) NOT NULL | minuscules, sans accents, espaces normalisés |
+| `is_default` | BOOLEAN NOT NULL | défaut système ≠ personnalisée |
+| `icon_key` | VARCHAR(30) NOT NULL | icône affichée (`label` par défaut) |
+
+Unicité : `(COALESCE(user_id, '00000000-…-000000000000'::uuid), type, normalized_name)` — empêche doublons concurrents, casse/accents insensibles, défauts inclus.
+
+### budgets — migrations 003, 010
+`id` UUID PK · `user_id` FK · `wallet_id` FK · `category` VARCHAR(50) · `category_id` UUID FK → categories (010, ON DELETE SET NULL) · `limit_amount` BIGINT CHECK > 0 · `period` VARCHAR(20) défaut `monthly` · **UNIQUE `(wallet_id, category)`** · timestamps.
 
 ### periods — migration 007
 `id` UUID PK · `user_id` FK · `wallet_id` FK · `start_date`/`end_date` DATE NOT NULL, CHECK `end_date >= start_date` · `status` VARCHAR(10) CHECK `active` | `archived`, défaut `active` · `snapshot` JSONB · `created_at` · `closed_at` TIMESTAMPTZ. **Index unique partiel** `uq_periods_one_active` : une seule période `active` par wallet.
@@ -154,10 +182,11 @@ erDiagram
 | refresh_tokens | `idx_refresh_tokens_user` |
 | wallets | `idx_wallets_user` |
 | initial_amount_history | `idx_iah_wallet` |
-| transactions | `idx_tx_wallet_date (wallet_id, date DESC, created_at DESC)`, `idx_tx_wallet_type`, `idx_tx_wallet_category`, `idx_tx_wallet_period`, `idx_tx_wallet_savings` (partiel `WHERE type LIKE 'savings_%'`) |
+| transactions | `idx_tx_wallet_date (wallet_id, date DESC, created_at DESC)`, `idx_tx_wallet_type`, `idx_tx_wallet_category`, `idx_tx_wallet_period`, `idx_tx_wallet_savings` (partiel `WHERE type LIKE 'savings_%'`), `idx_tx_category_id` (010) |
+| budgets | unique implicite `(wallet_id, category)`, `idx_budgets_category_id` (010) |
+| categories | `categories_owner_type_name` (unique, 010) |
 | periods | `idx_periods_wallet`, `uq_periods_one_active` (unique partiel) |
 | goals | `idx_goals_wallet` |
-| budgets | unique implicite `(wallet_id, category)` |
 
 ## Contraintes et triggers
 

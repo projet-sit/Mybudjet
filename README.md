@@ -29,10 +29,11 @@ Règle d'or : `solde = montant initial + Σ revenus − Σ dépenses`, recalcul�
 - Accueil avec solde / Reste (solde − épargne) / épargne / budget du mois
 - Opérations (dépenses, revenus, épargne) avec recherche plein-historique, filtres, regroupement par jour
 - Épargne : versement / retrait / tout récupérer, atomique, disponible hors-ligne
-- Budgets par catégorie (alertes à 50 %, 80 % et 100 %)
-- Statistiques par période, archives de périodes mensuelles (historique conservé)
-- Hors-ligne : les écritures partent en file d'attente et se rejouent au retour du réseau
-- Réinitialisation avec archivage + annulation 10 s
+- Budgets par catégorie (alertes locales à 80 % et 100 %, une fois par seuil et par période)
+- Catégories personnalisées via « Autres » (création, renommage, suppression avec opérations réassignées à « Autres » ; 30 par type ; hors-ligne avec fusion anti-doublon)
+- Statistiques par période, archives de périodes mensuelles (API)
+- Hors-ligne : les écritures partent en file d'attente et se rejouent au retour du réseau (anti-doublons par id client, fusion des catégories à la synchro)
+- Réinitialisation complète du compte (« comme neuf ») : tout est supprimé définitivement, le compte est conservé
 - Export PDF des transactions (l'export CSV est disponible côté API : `GET /api/v1/wallets/:id/export`)
 - Aide et FAQ intégrée (Profil → Aide et FAQ), fonctionne hors-ligne
 
@@ -159,9 +160,11 @@ Endpoints principaux (tous préfixés `/api/v1`, authentification `Authorization
 | `GET/POST /wallets/:id/transactions` `GET/PATCH/DELETE /wallets/:id/transactions/:txId` | Transactions (pagination, filtres, recherche) |
 | `GET /wallets/:id/dashboard` `GET /wallets/:id/stats?period=week\|month\|year` | Tableau de bord + statistiques |
 | `GET/POST/PATCH/DELETE /wallets/:id/budgets` | Budgets par catégorie (alertes 50/80/100 %) |
+| `GET/POST /categories` `PATCH/DELETE /categories/:id` | Catégories (défauts + personnalisées) |
 | `GET /wallets/:id/period` `POST /wallets/:id/period/next` `POST .../period/:periodId/undo` | Périodes mensuelles + annulation 10 s |
 | `GET /wallets/:id/periods` `POST /wallets/:id/periods/:periodId/restore` | Archives de périodes |
-| `POST /wallets/:id/reset` | Remise à zéro (archive, épargne conservée par défaut) |
+| `POST /wallets/:id/reset` | Remise à zéro avec archivage (API legacy) |
+| `POST /me/reset` | Réinitialisation complète (compte « comme neuf ») |
 | `GET/POST/PATCH/DELETE /wallets/:id/goals` + `contribute` `withdraw` | Objectifs d'épargne |
 | `GET /wallets/:id/export` | Export CSV complet |
 | `POST /client-errors` | Remontée de plantages mobiles (anonyme, fire-and-forget) |
@@ -220,21 +223,23 @@ L'APK arm64 est distribuée via GitHub Releases (`releases/latest` et tags `v*`)
 
 ```
 mobile/lib
-  core/        thème MYBUDGET + date_format + recherche (transaction_search) + widgets
-  features/    auth, onboarding, home, history, stats, budgets, savings, periods, reset, profile, help (FAQ), shell
-  models/      Transaction, DashboardData, StatsData, Budget, Period*, Wallet, User
-  providers/   Riverpod (auth, wallet, transactions, dashboard, stats, budgets, sync, onboarding, prefs, shell)
+  core/        thème MYBUDGET + date_format + recherche (transaction_search) + widgets + category_names
+  features/    auth, onboarding, home, history, stats, budgets, savings, reset, profile, help (FAQ), categories, shell
+  models/      Category, Transaction, DashboardData, StatsData, Budget, Period*, Wallet, User
+  providers/   Riverpod (auth, wallet, transactions, dashboard, stats, budgets, sync, categories, onboarding, prefs, shell)
   routing/     GoRouter avec gardes d'authentification
   services/    api_client (Dio), outbox (file d'attente), cache hors-ligne, repositories,
-               error_reporter (crash reports), transaction_pdf_export_service
+               budget_alerts_service (notifications locales), error_reporter (crash reports),
+               transaction_pdf_export_service
   widgets/     logo, transaction_tile
 backend/src
   controllers / services / repositories / validators / routes / middlewares
   config/      db.js (Pool pg), env.js
-  database/    migrate.js + migrations (001→009 ; 004 absent)
+  database/    migrate.js + backfill_categories.js + migrations (001→010 ; 004 absent)
 backend/test
   unit/        tests unitaires (money, ciel)
   integration/ harness pg-mem + tests d'API de bout en bout
+  rollback.local.cjs  (test:rollback, vraie PostgreSQL locale : atomicité du reset)
 docs/          documentation (architecture, données, métier, API, guide, conception)
 ```
 

@@ -159,6 +159,7 @@ class Budget {
     required this.walletId,
     required this.category,
     required this.limitAmount,
+    this.categoryId,
     this.spent = 0,
     this.percent = 0,
     this.alertLevel = 0,
@@ -168,6 +169,7 @@ class Budget {
   final String walletId;
   final String category;
   final int limitAmount;
+  final String? categoryId;
   final int spent;
   final int percent;
   final int alertLevel; // 0 | 50 | 80 | 100
@@ -179,6 +181,7 @@ class Budget {
         'walletId': walletId,
         'category': category,
         'limitAmount': limitAmount,
+        if (categoryId != null) 'categoryId': categoryId,
         'spent': spent,
         'percent': percent,
         'alertLevel': alertLevel,
@@ -189,6 +192,7 @@ class Budget {
       id: json['id'] as String,
       walletId: json['walletId'] as String,
       category: (json['category'] ?? '') as String,
+      categoryId: json['categoryId'] as String?,
       limitAmount: Transaction.asInt(json['limitAmount']),
       spent: Transaction.asInt(json['spent']),
       percent: Transaction.asInt(json['percent']),

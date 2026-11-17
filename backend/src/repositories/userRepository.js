@@ -8,6 +8,7 @@ function toPublicUser(row) {
     phone: row.phone,
     photoUrl: row.photo_url,
     currency: row.currency,
+    dataEpoch: row.data_epoch ?? 0,
     createdAt: row.created_at,
   };
 }

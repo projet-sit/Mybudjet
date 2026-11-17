@@ -107,10 +107,11 @@ class DataRepository {
         .toList();
   }
 
-  Future<Budget> createBudget(String walletId, {required String category, required int limitAmount}) async {
+  Future<Budget> createBudget(String walletId, {required String category, required int limitAmount, String? categoryId}) async {
     final response = await _dio.post('/wallets/$walletId/budgets', data: {
       'category': category,
       'limitAmount': limitAmount,
+      'categoryId': ?categoryId,
     });
     return Budget.fromJson(response.data['data']['budget'] as Map<String, dynamic>);
   }

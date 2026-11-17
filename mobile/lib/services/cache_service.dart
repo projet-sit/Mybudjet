@@ -123,6 +123,18 @@ class CacheService {
     }
   }
 
+  /// Réinitialisation complète : supprime TOUTES les données locales en cache
+  /// (portefeuille, dashboard, opérations, budgets, catégories, prefs de session).
+  /// Les préférences de l'appareil (thème, langue, alertes, onboarding) sont conservées.
+  Future<void> clearAllCaches() async {
+    final prefs = await _prefs;
+    const keep = {'theme_dark', 'theme_mode', 'language', 'budget_alerts', 'onboarding_seen', 'mybudget.session'};
+    final keys = prefs.getKeys().where((k) => !keep.contains(k)).toList();
+    for (final k in keys) {
+      await prefs.remove(k);
+    }
+  }
+
   /// Phase 10 — export CSV : téléchargé puis partagé via la feuille de partage.
   Future<String> exportCsv(String walletId) async {
     final response = await ApiClient.instance.dio.get<String>(

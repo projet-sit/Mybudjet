@@ -1,0 +1,65 @@
+erDiagram
+  users ||--o{ wallets : "possède"
+  users ||--o{ refresh_tokens : "sessions"
+  users ||--o{ password_reset_tokens : "reset"
+  wallets ||--o{ transactions : "enregistre"
+  wallets ||--o{ budgets : "plafonne"
+  wallets ||--o{ periods : "archive"
+  wallets ||--o{ goals : "objectif"
+  wallets ||--o{ initial_amount_history : "historise"
+  transactions }o--o| periods : "rattachée à"
+
+  users {
+    uuid id PK
+    varchar display_name
+    varchar email "unique, nullable depuis 009"
+    varchar phone "unique partiel, nullable"
+    varchar password_hash
+    varchar currency "défaut XOF"
+    timestamptz created_at
+  }
+  wallets {
+    uuid id PK
+    uuid user_id FK
+    varchar name
+    bigint initial_amount ">= 0"
+    bigint balance ">= 0"
+    bigint savings_amount ">= 0"
+    date start_date
+    varchar currency "défaut XOF"
+  }
+  transactions {
+    uuid id PK
+    uuid wallet_id FK
+    uuid period_id FK "nullable, SET NULL"
+    varchar type "expense|income|savings_deposit|savings_withdrawal"
+    bigint amount "> 0"
+    varchar category
+    date date
+    varchar time "HH:mm"
+    varchar payment_method
+  }
+  budgets {
+    uuid id PK
+    uuid wallet_id FK
+    varchar category
+    bigint limit_amount "> 0"
+    varchar period "défaut monthly"
+  }
+  periods {
+    uuid id PK
+    uuid wallet_id FK
+    date start_date
+    date end_date
+    varchar status "active|archived"
+    jsonb snapshot
+  }
+  goals {
+    uuid id PK
+    uuid wallet_id FK
+    varchar name
+    bigint target_amount "> 0"
+    bigint saved_amount ">= 0"
+    varchar status "active|completed"
+    date deadline "nullable"
+  }

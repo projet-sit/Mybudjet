@@ -1,0 +1,36 @@
+@page {
+  size: A4;
+  margin: 18mm 16mm 18mm 16mm;
+}
+body {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 11pt;
+  color: #0B3552;
+  line-height: 1.45;
+}
+h1, h2, h3, h4 {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #0284C7;
+  line-height: 1.25;
+}
+h1 { font-size: 22pt; border-bottom: 3px solid #0284C7; padding-bottom: 6px; }
+h2 { font-size: 16pt; border-bottom: 1px solid #BAE6FD; padding-bottom: 4px; }
+h3 { font-size: 12.5pt; color: #0369A1; }
+code, pre {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  background: #F2FAFF;
+  border-radius: 4px;
+}
+pre {
+  padding: 10px;
+  border: 1px solid #BAE6FD;
+  overflow-x: auto;
+  font-size: 8.5pt;
+}
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; }
+th, td { border: 1px solid #BAE6FD; padding: 6px 8px; text-align: left; }
+th { background: #0284C7; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
+tr:nth-child(even) td { background: #F2FAFF; }
+blockquote { border-left: 4px solid #38BDF8; background: #F2FAFF; padding: 8px 12px; margin: 10px 0; }
+img { max-width: 100%; }
+a { color: #0284C7; }

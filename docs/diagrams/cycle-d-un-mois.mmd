@@ -1,0 +1,6 @@
+stateDiagram-v2
+  [*] --> Active : création (reset ou rollover)
+  Active --> Archived : reset / clôture de mois (snapshot jsonb)
+  Archived --> Active : restore (uniquement si période courante vide)
+  Active --> Active : undo (fenêtre 10 s après reset, 0 tx)
+  Archived --> [*]

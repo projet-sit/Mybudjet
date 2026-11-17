@@ -1,0 +1,59 @@
+classDiagram
+  class Wallet {
+    +UUID id
+    +UUID userId
+    +String name
+    +int initialAmount
+    +int balance
+    +int savingsAmount
+    +Date startDate
+    +int available()
+  }
+  class Transaction {
+    +UUID id
+    +UUID walletId
+    +UUID periodId
+    +String type
+    +int amount
+    +String category
+    +String date
+    +String time
+    +String paymentMethod
+  }
+  class Budget {
+    +UUID id
+    +UUID walletId
+    +String category
+    +int limitAmount
+    +int spent()
+    +int alertLevel()
+  }
+  class Period {
+    +UUID id
+    +UUID walletId
+    +Date startDate
+    +Date endDate
+    +String status
+    +Object snapshot
+  }
+  class Goal {
+    +UUID id
+    +UUID walletId
+    +String name
+    +int targetAmount
+    +int savedAmount
+    +String status
+  }
+  class User {
+    +UUID id
+    +String displayName
+    +String email
+    +String phone
+    +String passwordHash
+  }
+  User "1" --> "*" Wallet
+  Wallet "1" --> "*" Transaction
+  Wallet "1" --> "*" Budget
+  Wallet "1" --> "*" Period
+  Wallet "1" --> "*" Goal
+  Period "1" --> "*" Transaction

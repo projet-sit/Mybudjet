@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant U as Utilisateur
+  participant UI as QuickAddSheet (UI)
+  participant P as Transactions/Wallet controllers
+  participant O as Outbox (hors-ligne)
+  participant API as API /transactions
+  participant DB as PostgreSQL
+
+  U->>UI: saisie montant, catégorie, date
+  UI->>P: create(...)
+  alt En ligne
+    P->>API: POST /wallets/:id/transactions
+    API->>DB: BEGIN + SELECT wallet FOR UPDATE + INSERT tx + UPDATE balance + COMMIT
+    DB-->>API: newBalance
+    API-->>P: 201 { transaction, newBalance }
+    P->>P: invalidate dashboard/wallet/budgets/stats
+  else Hors-ligne
+    P->>O: enqueue(transaction_create)
+    O->>O: cache optimiste (_adjustCachedWalletForTx)
+  end
+  P-->>UI: UI mise à jour (Reste, totaux, liste)

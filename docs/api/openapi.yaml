@@ -1,0 +1,1832 @@
+openapi: 3.1.0
+info:
+  title: MyBudget API
+  version: 1.1.0
+  summary: API REST de l'application MyBudget (gestion de budget personnel, FCFA).
+  description: |
+    API Express 5 + PostgreSQL hébergée sur Render. Toutes les réponses suivent
+    l'enveloppe `{ "success": true, "data": … }` ou `{ "success": false, "error": { "code", "message" } }`.
+
+    ## Authentification
+    `Authorization: Bearer <accessToken>` (JWT, 1 h). Rafraîchissement via `POST /auth/refresh`
+    (refresh token 30 j, hashé SHA-256, rotation à chaque appel).
+
+    ## Montants
+    Entiers FCFA uniquement (`BIGINT`). Jamais de flottant.
+
+    ## Dates
+    `date` : `YYYY-MM-DD` (jour civil). `time` : `HH:mm`. Timestamps : ISO 8601 UTC.
+
+    ## Limites de débit
+    - Global : 120 requêtes / minute / IP (`RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX`).
+    - `/auth/*` (register, login, refresh, forgot-password, reset-password) : 30 / 15 min / IP.
+    - `POST /client-errors` : 20 / min / IP.
+    - Réponse de dépassement : `429` `{ "success": false, "error": { "code": "RATE_LIMITED", … } }`.
+
+    ## Codes d'erreur métier (`error.code`)
+    `VALIDATION_ERROR`, `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404),
+    `EMAIL_ALREADY_IN_USE`, `PHONE_ALREADY_IN_USE` (409), `BALANCE_INSUFFICIENT` (409),
+    `SAVINGS_INSUFFICIENT` (409), `SAVINGS_LOCKED` (409), `BUDGET_EXISTS` (409),
+    `UNDO_EXPIRED` / `UNDO_UNAVAILABLE` / `UNDO_HAS_TRANSACTIONS` (409), `RESTORE_BLOCKED` (409),
+    `GOAL_HAS_SAVINGS` (409), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500).
+
+    ## Routes « Ciel » (`/stats/monthly`, `/export/*`, `/alerts/check`)
+    Héritage d'un client tiers, montées sur **`/` et `/api/v1`**. Requêtes internes référençant
+    des colonnes inexistantes → résultats vides ; `firebase-admin` non installé ; no-op.
+    **Marquées `x-obsolete: true`, ne pas utiliser.**
+  contact:
+    name: Mainteneur MyBudget
+    email: "[À REMPLIR]"
+  license:
+    name: Propriétaire — tous droits réservés
+    identifier: LicenseRef-Proprietaire
+servers:
+  - url: https://mybudjet-rslh.onrender.com/api/v1
+    description: Production (Render, plan gratuit)
+  - url: http://localhost:3000/api/v1
+    description: Développement local
+tags:
+  - name: Health
+    description: Sonde publique
+  - name: Auth
+    description: Inscription, connexion, sessions
+  - name: Wallets
+    description: Portefeuilles et montant initial
+  - name: Savings
+    description: Épargne (versement, retrait, tout récupérer)
+  - name: Transactions
+    description: Opérations (dépense, revenu)
+  - name: Stats
+    description: Tableau de bord, statistiques, export CSV
+  - name: Budgets
+    description: Budgets par catégorie (alertes 50/80/100 %)
+  - name: Periods
+    description: Périodes mensuelles, archives, remise à zéro
+  - name: Goals
+    description: Objectifs d'épargne
+  - name: Ciel (obsolète)
+    description: Héritage ciel.app — ne pas utiliser
+  - name: Client errors
+    description: Remontée anonymisée de plantages mobiles
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Sonde de santé (public)
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service opérationnel (le champ `database` indique l'état réel)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      x-rate-limit: none
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Créer un compte
+      description: Téléphone requis (`^\+[1-9]\d{7,14}$`) sauf rétrocompatibilité e-mail seul. E-mail optionnel, normalisé en minuscules. Mot de passe ≥ 6 caractères.
+      security: []
+      operationId: register
+      x-rate-limit: "30 requêtes / 15 min / IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              displayName: "Awa"
+              phone: "+22900000000"
+              email: "awa@example.com"
+              password: "exemple-factice-123"
+      responses:
+        "201":
+          description: Compte créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "409":
+          description: Identifiant déjà pris
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: PHONE_ALREADY_IN_USE, message: "Ce téléphone est déjà utilisé" }
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Se connecter
+      description: Identifiant = téléphone ou e-mail. Message d'erreur volontairement générique.
+      security: []
+      operationId: login
+      x-rate-limit: "30 requêtes / 15 min / IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              phone: "+22900000000"
+              password: "exemple-factice-123"
+      responses:
+        "200":
+          description: Session ouverte
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "401":
+          description: Identifiant ou mot de passe incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rafraîchir les jetons (rotation)
+      security: []
+      operationId: refresh
+      x-rate-limit: "30 requêtes / 15 min / IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        "200":
+          description: Nouvelle paire de jetons (l'ancienne est révoquée)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokensResponse'
+        "401":
+          description: Jeton révoqué, expiré ou invalide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Se déconnecter (révoque le refresh token)
+      description: Aucun Bearer requis ; on révoque le refresh token fourni.
+      security: []
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        "200":
+          description: Déconnecté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+              example: { success: true, data: { loggedOut: true } }
+        "400": { $ref: '#/components/responses/ValidationError' }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Demander la réinitialisation du mot de passe
+      description: |
+        Toujours `200`, que l'e-mail existe ou non (aucune énumération possible).
+        Aucun fournisseur e-mail n'est intégré à ce jour : le jeton (1 h, usage unique)
+        n'est délivré qu'au serveur — dev uniquement avec `EXPOSE_DEV_RESET_TOKEN=true`.
+      security: []
+      operationId: forgotPassword
+      x-rate-limit: "30 requêtes / 15 min / IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        "200":
+          description: Étape acceptée (aucune information divulguée)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Réinitialiser le mot de passe
+      description: Jeton à usage unique (1 h). Tous les refresh tokens sont révoqués après changement.
+      security: []
+      operationId: resetPassword
+      x-rate-limit: "30 requêtes / 15 min / IP"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        "200":
+          description: Mot de passe changé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Mon profil
+      operationId: getMe
+      responses:
+        "200":
+          description: Profil courant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Auth]
+      summary: Modifier mon profil (nom, photo, devise)
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        "200":
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Auth]
+      summary: Supprimer mon compte définitivement
+      description: "Cascade : compte, portefeuilles, transactions, budgets, périodes, objectifs, jetons. Irréversible."
+      operationId: deleteMe
+      responses:
+        "200":
+          description: Compte supprimé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+              example: { success: true, data: { deleted: true } }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets:
+    get:
+      tags: [Wallets]
+      summary: Lister mes portefeuilles
+      operationId: listWallets
+      responses:
+        "200":
+          description: Liste (éventuellement vide)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Wallets]
+      summary: Créer un portefeuille
+      operationId: createWallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalletRequest'
+            example:
+              name: "Budget du mois"
+              initialAmount: 100000
+      responses:
+        "201":
+          description: Portefeuille créé (balance = initialAmount)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{id}:
+    get:
+      tags: [Wallets]
+      summary: Détail d'un portefeuille
+      operationId: getWallet
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      responses:
+        "200":
+          description: Portefeuille
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{id}/initial-amount/history:
+    get:
+      tags: [Wallets]
+      summary: Historique des montants initiaux (100 derniers)
+      operationId: initialAmountHistory
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      responses:
+        "200":
+          description: Historique horodaté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitialAmountHistoryResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{id}/initial-amount:
+    patch:
+      tags: [Wallets]
+      summary: Changer le montant initial
+      description: Historise la modification. Refusé (409 `SAVINGS_LOCKED`) si le nouveau solde < somme des `saved_amount` des objectifs.
+      operationId: updateInitialAmount
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInitialAmountRequest'
+      responses:
+        "200":
+          description: Portefeuille mis à jour (solde recalculé)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Épargne verrouillée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: SAVINGS_LOCKED, message: "Solde inférieur à l'épargne des objectifs" }
+
+  /wallets/{id}/savings/deposit:
+    post:
+      tags: [Savings]
+      summary: Verser dans l'épargne
+      description: Exige `amount ≤ balance − savings_amount`. Crée une transaction `savings_deposit`. `balance` inchangé.
+      operationId: savingsDeposit
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavingsAmountRequest'
+            example: { amount: 20000 }
+      responses:
+        "200":
+          description: Versement effectué
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavingsResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Solde insuffisant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: BALANCE_INSUFFICIENT, message: "Solde insuffisant" }
+
+  /wallets/{id}/savings/withdraw:
+    post:
+      tags: [Savings]
+      summary: Retirer de l'épargne
+      description: Exige `amount ≤ savings_amount`. Crée une transaction `savings_withdrawal`.
+      operationId: savingsWithdraw
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavingsAmountRequest'
+            example: { amount: 5000 }
+      responses:
+        "200":
+          description: Retrait effectué
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavingsResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Épargne insuffisante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: SAVINGS_INSUFFICIENT, message: "Épargne insuffisante" }
+
+  /wallets/{id}/savings/withdraw-all:
+    post:
+      tags: [Savings]
+      summary: Récupérer toute l'épargne
+      description: Remet l'épargne à 0 en une écriture. `transaction` peut être `null` si l'épargne était déjà nulle.
+      operationId: savingsWithdrawAll
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      responses:
+        "200":
+          description: Épargne rapatriée dans le disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavingsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{id}/reset:
+    post:
+      tags: [Periods]
+      summary: Remise à zéro (archive la période courante)
+      description: |
+        Archive avec snapshot JSONB, ouvre la période du jour → fin du mois.
+        `includeSavings` (défaut `false`) : si `false`, l'épargne est conservée ;
+        si `true`, tout repart à 0. Annulation possible 10 s via `POST /:id/period/:periodId/undo`.
+      operationId: resetWallet
+      parameters: [{ $ref: '#/components/parameters/walletId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRequest'
+            example: { includeSavings: false }
+      responses:
+        "200":
+          description: Nouvelle période active créée ; période précédente archivée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/transactions:
+    post:
+      tags: [Transactions]
+      summary: Créer une transaction
+      description: |
+        `type` ∈ `expense|income` (les mouvements d'épargne passent par `/savings/*`, refusés ici avec 400).
+        Plafond dépense : `amount ≤ balance − savings_amount`, sinon 409 `BALANCE_INSUFFICIENT`.
+      operationId: createTransaction
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+            example:
+              type: expense
+              amount: 7000
+              category: "Alimentation"
+              date: "2026-11-17"
+              time: "12:30"
+              paymentMethod: "Espèces"
+              description: "Exemple factice"
+      responses:
+        "201":
+          description: Transaction créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Solde insuffisant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Transactions]
+      summary: Lister les transactions (pagination, filtres, recherche)
+      operationId: listTransactions
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: type
+          in: query
+          schema: { type: string, enum: [expense, income, savings, savings_deposit, savings_withdrawal] }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: dateFrom
+          in: query
+          schema: { type: string, format: date }
+        - name: dateTo
+          in: query
+          schema: { type: string, format: date }
+        - name: minAmount
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: maxAmount
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [date, amount, created_at], default: date }
+        - name: sortDir
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+        - name: all
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: "`1` = inclure les périodes archivées"
+      responses:
+        "200":
+          description: Page de résultats (triée date desc par défaut)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPageResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{walletId}/transactions/recalculate:
+    post:
+      tags: [Transactions]
+      summary: Recalculer le solde depuis la période active
+      description: "`balance = initial_amount + Σ(revenus) - Σ(dépenses)` de la période active. Idempotent."
+      operationId: recalculateBalance
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      responses:
+        "200":
+          description: Solde recalculé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecalculateResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/transactions/{txId}:
+    get:
+      tags: [Transactions]
+      summary: Détail d'une transaction
+      operationId: getTransaction
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/txId' }]
+      responses:
+        "200":
+          description: Transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Transactions]
+      summary: Modifier une transaction (partiel)
+      operationId: updateTransaction
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/txId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransactionRequest'
+      responses:
+        "200":
+          description: Transaction mise à jour (solde recalculé)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Solde insuffisant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Transactions]
+      summary: Supprimer une transaction
+      operationId: deleteTransaction
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/txId' }]
+      responses:
+        "200":
+          description: Supprimée (solde recalculé)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteTransactionResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/dashboard:
+    get:
+      tags: [Stats]
+      summary: Tableau de bord de la période active
+      description: Totaux de la **période active** uniquement ; les 5 dernières transactions.
+      operationId: getDashboard
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      responses:
+        "200":
+          description: Données du tableau de bord
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/stats:
+    get:
+      tags: [Stats]
+      summary: Statistiques par période
+      description: Lit **toutes** les périodes (y compris archivées). Bornes minuit heure locale (UTC+1).
+      operationId: getStats
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+        - name: period
+          in: query
+          schema: { type: string, enum: [day, week, month, year, all], default: month }
+      responses:
+        "200":
+          description: Statistiques agrégées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/export:
+    get:
+      tags: [Stats]
+      summary: Export CSV complet (BOM UTF-8, séparateur `;`)
+      description: |
+        Colonnes : `Date;Heure;Type;Categorie;Description;Mode de paiement;Montant;Solde apres`.
+        Solde recalculé itérativement depuis `initial_amount` (épargne = delta 0).
+      operationId: exportCsv
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      responses:
+        "200":
+          description: Fichier CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/budgets:
+    get:
+      tags: [Budgets]
+      summary: Lister les budgets
+      description: "`spent` = Σ dépenses de la catégorie sur la période active (ou `[dateFrom;dateTo]`)."
+      operationId: listBudgets
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+        - name: progress
+          in: query
+          schema: { type: integer, enum: [0, 1], default: 1 }
+        - name: dateFrom
+          in: query
+          schema: { type: string, format: date }
+        - name: dateTo
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Budgets avec progression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Budgets]
+      summary: Créer un budget (unique par portefeuille + catégorie)
+      operationId: createBudget
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBudgetRequest'
+            example: { category: "Alimentation", limitAmount: 80000, period: "monthly" }
+      responses:
+        "201":
+          description: Budget créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "409":
+          description: Budget déjà existant pour cette catégorie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: BUDGET_EXISTS, message: "Un budget existe déjà pour cette catégorie" }
+
+  /wallets/{walletId}/budgets/{budgetId}:
+    patch:
+      tags: [Budgets]
+      summary: Modifier le montant limite
+      operationId: updateBudget
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/budgetId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBudgetRequest'
+      responses:
+        "200":
+          description: Budget mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Budgets]
+      summary: Supprimer un budget
+      operationId: deleteBudget
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/budgetId' }]
+      responses:
+        "200":
+          description: Supprimé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+              example: { success: true, data: { deleted: true } }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/period:
+    get:
+      tags: [Periods]
+      summary: Période active (bornes, jours restants)
+      operationId: getPeriodInfo
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      responses:
+        "200":
+          description: Informations de période
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodInfoResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/period/next:
+    post:
+      tags: [Periods]
+      summary: Clôturer la période et ouvrir la suivante
+      description: "`mode: 'reset'` remet à zéro ; `mode: 'carry'` conserve tout. La période close est archivée (snapshot)."
+      operationId: nextPeriod
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NextPeriodRequest'
+      responses:
+        "201":
+          description: Nouvelle période ouverte
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodTransitionResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{walletId}/period/{periodId}/undo:
+    post:
+      tags: [Periods]
+      summary: Annuler la remise à zéro (fenêtre 10 s)
+      description: |
+        `periodId` = la **nouvelle** période créée par le reset.
+        Conditions : `UNDO_WINDOW_MS=10000` écoulées ? non ; 0 transaction sur la nouvelle période ; goals inchangés.
+        Sinon 409 `UNDO_EXPIRED` / `UNDO_UNAVAILABLE` / `UNDO_HAS_TRANSACTIONS`.
+      operationId: undoReset
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+        - name: periodId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      responses:
+        "200":
+          description: État restauré à l'instant du reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "409":
+          description: Annulation impossible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallets/{walletId}/periods:
+    get:
+      tags: [Periods]
+      summary: Lister les périodes (active + archives)
+      operationId: listPeriods
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      responses:
+        "200":
+          description: Périodes (desc)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{walletId}/periods/{periodId}/restore:
+    post:
+      tags: [Periods]
+      summary: Restaurer une période archivée
+      description: La période courante doit être vide (0 transaction) et les objectifs inchangés depuis l'archivage ; sinon 409 `RESTORE_BLOCKED`.
+      operationId: restorePeriod
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+        - name: periodId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      responses:
+        "200":
+          description: Période archivée restaurée (solde/épargne/dates)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Restauration impossible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallets/{walletId}/goals:
+    get:
+      tags: [Goals]
+      summary: Lister les objectifs d'épargne
+      operationId: listGoals
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      responses:
+        "200":
+          description: Objectifs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalsResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Goals]
+      summary: Créer un objectif
+      operationId: createGoal
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGoalRequest'
+            example: { name: "Ordinateur", targetAmount: 250000, deadline: "2026-12-31" }
+      responses:
+        "201":
+          description: Objectif créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{walletId}/goals/{goalId}:
+    patch:
+      tags: [Goals]
+      summary: Modifier un objectif (nom, cible, échéance)
+      operationId: updateGoal
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/goalId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGoalRequest'
+      responses:
+        "200":
+          description: Objectif mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Goals]
+      summary: Supprimer un objectif (refusé si épargne engagée)
+      operationId: deleteGoal
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/goalId' }]
+      responses:
+        "200":
+          description: Supprimé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Objectif avec épargne engagée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: { code: GOAL_HAS_SAVINGS, message: "L'objectif contient déjà une épargne" }
+
+  /wallets/{walletId}/goals/{goalId}/contribute:
+    post:
+      tags: [Goals]
+      summary: Alimenter un objectif (déplace du disponible vers l'épargne)
+      operationId: contributeGoal
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/goalId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributeRequest'
+      responses:
+        "200":
+          description: Contribution enregistrée (statut auto `completed` si la cible est atteinte)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Solde insuffisant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallets/{walletId}/goals/{goalId}/withdraw:
+    post:
+      tags: [Goals]
+      summary: Reprendre de l'argent d'un objectif
+      operationId: withdrawGoal
+      parameters: [{ $ref: '#/components/parameters/walletIdParam' }, { $ref: '#/components/parameters/goalId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributeRequest'
+      responses:
+        "200":
+          description: Retrait effectué
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409":
+          description: Épargne du portefeuille insuffisante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /client-errors:
+    post:
+      tags: [Client errors]
+      summary: Signaler un plantage mobile (anonyme)
+      description: Corps tronqué côté serveur (message ≤ 300, stack ≤ 1500, screen ≤ 80). Répond toujours 204.
+      security: []
+      operationId: reportClientError
+      x-rate-limit: "20 requêtes / min / IP"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientErrorRequest'
+      responses:
+        "204": { description: Reçu (aucune fuite d'information) }
+        "429": { $ref: '#/components/responses/RateLimited' }
+
+  # ---------- Routes Ciel (obsolètes, montées sur / et /api/v1) ----------
+  /stats/monthly:
+    get:
+      tags: [Ciel (obsolète)]
+      summary: Statistiques mensuelles Ciel (NO-OP)
+      operationId: cielMonthlyStats
+      x-obsolete: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: months
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 24, default: 6 }
+      responses:
+        "200":
+          description: Tableau de N mois ; valeurs nulles/vides (requêtes incompatibles avec le schéma)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  months: { type: array, items: { type: object } }
+        "400": { $ref: '#/components/responses/ValidationError' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /export/excel:
+    get:
+      tags: [Ciel (obsolète)]
+      summary: Export Excel Ciel (NO-OP partiel)
+      operationId: cielExportExcel
+      x-obsolete: true
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: to
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        "200":
+          description: XML Spreadsheet (3 feuilles quasi vides)
+          content:
+            application/vnd.ms-excel: {}
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /export/xlsx:
+    get:
+      tags: [Ciel (obsolète)]
+      summary: Alias de /export/excel
+      operationId: cielExportXlsx
+      x-obsolete: true
+      responses:
+        "200":
+          description: Voir /export/excel
+          content:
+            application/vnd.ms-excel: {}
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /export/csv:
+    get:
+      tags: [Ciel (obsolète)]
+      summary: Export CSV Ciel (en-tête seul)
+      operationId: cielExportCsv
+      x-obsolete: true
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: to
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        "200":
+          description: CSV Ciel (XML Spreadsheet-like, contenu quasi vide)
+          content:
+            text/csv: {}
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /alerts/check:
+    post:
+      tags: [Ciel (obsolète)]
+      summary: Vérification d'alertes Ciel (NO-OP)
+      operationId: cielAlertsCheck
+      x-obsolete: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+                month: { type: string, pattern: '^\d{4}-\d{2}$' }
+      responses:
+        "200":
+          description: Compte les alertes sans rien envoyer (`notificationsSent` = compteur, aucun envoi réel)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notificationsSent: { type: integer }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token JWT (1 h) obtenu via /auth/login ou /auth/refresh.
+
+  parameters:
+    walletId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      description: UUID du portefeuille
+    walletIdParam:
+      name: walletId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      description: UUID du portefeuille
+    txId:
+      name: txId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      description: UUID de la transaction
+    budgetId:
+      name: budgetId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      description: UUID du budget
+    goalId:
+      name: goalId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f-]{36}$' }
+      description: UUID de l'objectif
+
+  responses:
+    ValidationError:
+      description: Entrée invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: { code: VALIDATION_ERROR, message: "Montant invalide : entier positif attendu" }
+    Unauthorized:
+      description: Jeton manquant/invalide/expiré
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: { code: UNAUTHORIZED, message: "Session expirée, reconnecte-toi" }
+    NotFound:
+      description: Ressource introuvable (ou appartement à un autre utilisateur)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: { code: NOT_FOUND, message: "Portefeuille introuvable" }
+    RateLimited:
+      description: Quota dépassé
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: { code: RATE_LIMITED, message: "Trop de requêtes, réessaie plus tard" }
+
+  schemas:
+    # ---------- Enveloppes ----------
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, const: false }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    OkResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data: { type: object }
+    # ---------- Santé ----------
+    HealthResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            service: { type: string, example: "MYBUDGET API" }
+            version: { type: string, example: "1.1.0" }
+            status: { type: string, example: "ok" }
+            nodeEnv: { type: string, example: "production" }
+            database: { type: string, example: "connecté" }
+            time: { type: string, format: date-time }
+    # ---------- Auth ----------
+    RegisterRequest:
+      type: object
+      required: [displayName, password]
+      properties:
+        displayName: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: [string, "null"], format: email, description: "Optionnel (rétrocompatibilité)" }
+        phone: { type: [string, "null"], pattern: '^\+[1-9]\d{7,14}$', description: "Requis sauf compte historique e-mail" }
+        password: { type: string, minLength: 6 }
+      anyOf:
+        - required: [phone]
+        - required: [email]
+    LoginRequest:
+      type: object
+      required: [password]
+      properties:
+        phone: { type: [string, "null"] }
+        email: { type: [string, "null"], format: email }
+        password: { type: string, minLength: 1 }
+      anyOf:
+        - required: [phone]
+        - required: [email]
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, minLength: 10 }
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string, minLength: 10 }
+        newPassword: { type: string, minLength: 6 }
+    UpdateMeRequest:
+      type: object
+      properties:
+        displayName: { type: string, minLength: 2, maxLength: 100 }
+        photoUrl: { type: [string, "null"], maxLength: 500 }
+        currency: { type: string, maxLength: 8 }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: [string, "null"], format: email }
+        phone: { type: [string, "null"] }
+        photoUrl: { type: [string, "null"] }
+        currency: { type: string, example: XOF }
+        createdAt: { type: string, format: date-time }
+    Tokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: string, example: "1h" }
+    AuthResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            user: { $ref: '#/components/schemas/User' }
+            tokens: { $ref: '#/components/schemas/Tokens' }
+    TokensResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            tokens: { $ref: '#/components/schemas/Tokens' }
+    UserResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            user: { $ref: '#/components/schemas/User' }
+    # ---------- Wallets ----------
+    Wallet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        initialAmount: { type: integer, minimum: 0, description: "FCFA entiers" }
+        balance: { type: integer, minimum: 0, description: "FCFA entiers" }
+        savingsAmount: { type: integer, minimum: 0, description: "FCFA entiers" }
+        startDate: { type: string, format: date }
+        currency: { type: string, example: XOF }
+        createdAt: { type: string, format: date-time }
+    CreateWalletRequest:
+      type: object
+      required: [name, initialAmount]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        initialAmount: { type: integer, minimum: 0 }
+    UpdateInitialAmountRequest:
+      type: object
+      required: [initialAmount]
+      properties:
+        initialAmount: { type: integer, minimum: 0 }
+    WalletResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            wallet: { $ref: '#/components/schemas/Wallet' }
+    WalletsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            wallets:
+              type: array
+              items: { $ref: '#/components/schemas/Wallet' }
+            hasWallet: { type: boolean }
+    InitialAmountHistoryResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            history:
+              type: array
+              items:
+                type: object
+                properties:
+                  oldValue: { type: integer }
+                  newValue: { type: integer }
+                  changedAt: { type: string, format: date-time }
+    # ---------- Épargne ----------
+    SavingsAmountRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: integer, minimum: 1, description: "FCFA entiers" }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        periodId: { type: [string, "null"], format: uuid }
+        type: { type: string, enum: [expense, income, savings_deposit, savings_withdrawal] }
+        amount: { type: integer, minimum: 1 }
+        category: { type: string }
+        description: { type: [string, "null"], maxLength: 200 }
+        date: { type: string, format: date }
+        time: { type: string, pattern: '^\d{2}:\d{2}$' }
+        paymentMethod: { type: [string, "null"], enum: [Espèces, Mobile Money, Carte, Virement, null] }
+        createdAt: { type: string, format: date-time }
+    SavingsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            wallet: { $ref: '#/components/schemas/Wallet' }
+            transaction:
+              anyOf:
+                - $ref: '#/components/schemas/Transaction'
+                - type: "null"
+    # ---------- Transactions ----------
+    CreateTransactionRequest:
+      type: object
+      required: [type, amount, category, date]
+      properties:
+        type: { type: string, enum: [expense, income] }
+        amount: { type: integer, minimum: 1, description: "FCFA entiers" }
+        category:
+          type: string
+          description: "Dépenses : Alimentation, Transport, Logement, Santé, Études, Communication, Loisirs, Shopping, Abonnements, Famille, Autres — Revenus : Salaire, Business, Cadeau, Bourse, Autres"
+        description: { type: [string, "null"], maxLength: 200 }
+        date: { type: string, format: date }
+        time: { type: string, pattern: '^\d{2}:\d{2}$', description: "Défaut : maintenant" }
+        paymentMethod: { type: string, enum: [Espèces, Mobile Money, Carte, Virement], default: Espèces }
+    UpdateTransactionRequest:
+      type: object
+      properties:
+        type: { type: string, enum: [expense, income] }
+        amount: { type: integer, minimum: 1 }
+        category: { type: string }
+        description: { type: [string, "null"], maxLength: 200 }
+        date: { type: string, format: date }
+        time: { type: string, pattern: '^\d{2}:\d{2}$' }
+        paymentMethod: { type: string, enum: [Espèces, Mobile Money, Carte, Virement] }
+    TransactionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            transaction: { $ref: '#/components/schemas/Transaction' }
+            newBalance: { type: integer, minimum: 0 }
+    TransactionPageResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            transactions:
+              type: array
+              items: { $ref: '#/components/schemas/Transaction' }
+            total: { type: integer, minimum: 0 }
+            totalExpenses: { type: integer, minimum: 0 }
+            totalIncomes: { type: integer, minimum: 0 }
+            page: { type: integer, minimum: 1 }
+            limit: { type: integer, minimum: 1 }
+            pages: { type: integer, minimum: 0 }
+    RecalculateResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            balance: { type: integer, minimum: 0 }
+    DeleteTransactionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            newBalance: { type: integer, minimum: 0 }
+            deleted: { type: boolean, const: true }
+    # ---------- Stats ----------
+    DashboardResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            walletId: { type: string, format: uuid }
+            walletName: { type: string }
+            currency: { type: string }
+            initialAmount: { type: integer }
+            balance: { type: integer }
+            totalExpenses: { type: integer }
+            totalIncomes: { type: integer }
+            transactionsCount: { type: integer }
+            percentUsed: { type: integer, description: "round(dépenses / (initial + revenus) × 100)" }
+            weeklySeries:
+              type: array
+              items:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  expenses: { type: integer }
+            latestTransactions:
+              type: array
+              items: { $ref: '#/components/schemas/Transaction' }
+    StatsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            period: { type: string }
+            dateFrom: { type: string, format: date }
+            dateTo: { type: string, format: date }
+            periodExpenses: { type: integer }
+            periodIncomes: { type: integer }
+            previousPeriodExpenses: { type: integer }
+            averageDaily: { type: integer }
+            dailySeries:
+              type: array
+              items:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  expenses: { type: integer }
+            byCategory:
+              type: array
+              items:
+                type: object
+                properties:
+                  category: { type: string }
+                  total: { type: integer }
+                  count: { type: integer }
+                  percent: { type: number }
+    # ---------- Budgets ----------
+    Budget:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        category: { type: string }
+        limitAmount: { type: integer, minimum: 1 }
+        period: { type: string, default: monthly }
+        spent: { type: integer, minimum: 0 }
+        percent: { type: integer }
+        remaining: { type: integer, minimum: 0 }
+        alertLevel: { type: integer, enum: [0, 50, 80, 100], description: "0 <50 %, 50 ≥50 %, 80 ≥80 %, 100 ≥100 %" }
+    CreateBudgetRequest:
+      type: object
+      required: [category, limitAmount]
+      properties:
+        category: { type: string, minLength: 1 }
+        limitAmount: { type: integer, minimum: 1 }
+        period: { type: string, default: monthly }
+    UpdateBudgetRequest:
+      type: object
+      required: [limitAmount]
+      properties:
+        limitAmount: { type: integer, minimum: 1 }
+    BudgetResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            budget: { $ref: '#/components/schemas/Budget' }
+    BudgetsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            budgets:
+              type: array
+              items: { $ref: '#/components/schemas/Budget' }
+    # ---------- Périodes ----------
+    Period:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        status: { type: string, enum: [active, archived] }
+        snapshot: { type: [object, "null"] }
+        closedAt: { type: [string, "null"], format: date-time }
+    ResetRequest:
+      type: object
+      properties:
+        includeSavings: { type: boolean, default: false, description: "false = épargne conservée" }
+    ResetResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            period: { $ref: '#/components/schemas/Period' }
+            wallet: { $ref: '#/components/schemas/Wallet' }
+            previousPeriodId: { type: [string, "null"], format: uuid }
+            mode: { type: string, enum: [reset, carry, undo, restore] }
+            undoExpiresAt: { type: [string, "null"], format: date-time }
+    NextPeriodRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [reset, carry] }
+    PeriodInfoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            period: { $ref: '#/components/schemas/Period' }
+            needsNewPeriod: { type: boolean }
+            daysLeft: { type: integer }
+    PeriodTransitionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            period: { $ref: '#/components/schemas/Period' }
+            wallet: { $ref: '#/components/schemas/Wallet' }
+            previousPeriodId: { type: [string, "null"], format: uuid }
+            mode: { type: string, enum: [reset, carry] }
+    PeriodsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            periods:
+              type: array
+              items: { $ref: '#/components/schemas/Period' }
+    # ---------- Objectifs ----------
+    Goal:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        name: { type: string }
+        targetAmount: { type: integer, minimum: 1 }
+        savedAmount: { type: integer, minimum: 0 }
+        deadline: { type: [string, "null"], format: date }
+        status: { type: string, enum: [active, completed] }
+    CreateGoalRequest:
+      type: object
+      required: [name, targetAmount]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        targetAmount: { type: integer, minimum: 1 }
+        deadline: { type: [string, "null"], format: date }
+    UpdateGoalRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        targetAmount: { type: integer, minimum: 1 }
+        deadline: { type: [string, "null"], format: date }
+    ContributeRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: integer, minimum: 1 }
+    GoalResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            goal: { $ref: '#/components/schemas/Goal' }
+    GoalsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          properties:
+            goals:
+              type: array
+              items: { $ref: '#/components/schemas/Goal' }
+    # ---------- Erreurs client ----------
+    ClientErrorRequest:
+      type: object
+      properties:
+        message: { type: string, maxLength: 300 }
+        stack: { type: [string, "null"], maxLength: 1500 }
+        screen: { type: [string, "null"], maxLength: 80 }
+        platform: { type: [string, "null"], maxLength: 80 }
+        appVersion: { type: [string, "null"], maxLength: 40 }

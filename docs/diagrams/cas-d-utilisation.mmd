@@ -1,0 +1,18 @@
+flowchart LR
+  subgraph Acteurs
+    U([Utilisateur])
+  end
+  subgraph MyBudget["MyBudget"]
+    UC1(Créer un compte)
+    UC2(Créer un portefeuille)
+    UC3(Noter une dépense)
+    UC4(Noter un revenu)
+    UC5(Consulter Reste et solde)
+    UC6(Gérer son épargne)
+    UC7(Fixer un budget par catégorie)
+    UC8(Remettre à zéro)
+    UC9(Exporter ses données)
+    UC10(Supprimer son compte)
+    UC11(Utiliser sans internet)
+  end
+  U --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC7 & UC8 & UC9 & UC10 & UC11

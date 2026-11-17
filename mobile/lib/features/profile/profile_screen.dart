@@ -248,6 +248,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 18),
+          _sectionLabel(context, 'Assistance'),
+          const SizedBox(height: 8),
+          _card(
+            context,
+            children: [
+              ListTile(
+                leading: Icon(Icons.help_outline, color: scheme.primary),
+                title: const _TileTitle('Aide et FAQ'),
+                subtitle: const _TileSubtitle('Réponses aux questions fréquentes'),
+                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                onTap: () => context.push('/help'),
+              ),
+            ],
+          ),
           const SizedBox(height: 22),
           _sectionLabel(context, 'Réinitialisation'),
           const SizedBox(height: 8),

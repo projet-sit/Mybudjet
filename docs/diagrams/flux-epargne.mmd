@@ -1,0 +1,12 @@
+flowchart TD
+  A[Épargne actuelle = savings_amount] --> B{Action}
+  B -->|Verser X| C{X <= balance - savings_amount ?}
+  C -->|non| E[409 BALANCE_INSUFFICIENT]
+  C -->|oui| F["tx savings_deposit (+X), savings_amount += X"]
+  B -->|Retirer X| G{X <= savings_amount ?}
+  G -->|non| H[409 SAVINGS_INSUFFICIENT]
+  G -->|oui| I["tx savings_withdrawal (-X), savings_amount -= X"]
+  B -->|Tout récupérer| J["savings_amount -> 0 en une écriture"]
+  F --> K[Exclu des dépenses et des stats]
+  I --> K
+  J --> K

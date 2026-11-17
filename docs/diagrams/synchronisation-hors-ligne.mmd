@@ -1,0 +1,22 @@
+sequenceDiagram
+  participant App as App (outbox)
+  participant Net as Réseau
+  participant API as API Render
+  participant DB as PostgreSQL
+
+  App->>Net: flush() au retour du réseau / au resume
+  loop Dans l'ordre
+    App->>API: POST /transactions (ou savings / reset)
+    alt Succès
+      API->>DB: transaction SQL (FOR UPDATE)
+      DB-->>API: newBalance
+      API-->>App: 2xx
+      App->>App: remplacer local_id, vider l'op
+    else Erreur réseau/timeout
+      App->>App: op conservée, ré-essai plus tard
+    else Erreur métier 4xx
+      App->>App: rollback de l'effet optimiste + syncNotice
+    end
+  end
+  App->>API: GET /dashboard (revalidation)
+  App->>App: cache mis à jour, badge « Synchronisé »

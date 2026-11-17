@@ -1,0 +1,20 @@
+flowchart LR
+  subgraph Mobile["Application mobile (Flutter)"]
+    UI["features/ (écrans)"]
+    PR["providers/ (Riverpod)"]
+    SVC["services/ (api_client, repositories, outbox, cache)"]
+    MOD["models/"]
+    UI --> PR --> SVC --> MOD
+  end
+
+  subgraph Backend["API (Express, Render)"]
+    ROUTES["routes/"]
+    CTRL["controllers/"]
+    SRV["services/"]
+    REPO["repositories/"]
+    DB[("PostgreSQL 16")]
+    ROUTES --> CTRL --> SRV --> REPO --> DB
+  end
+
+  SVC -- "HTTPS /api/v1 (Bearer JWT)" --> ROUTES
+  SVC -- "hors-ligne : outbox locale (SharedPreferences)" --> SVC

@@ -1,0 +1,12 @@
+{
+  "name": "mybudget-docs",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Outils de génération de la documentation MyBudget (pas l'app).",
+  "scripts": {
+    "lint:api": "redocly lint api/openapi.yaml",
+    "build:api": "redocly build-docs api/openapi.yaml -o api/index.html",
+    "check:links": "markdown-link-check -c .markdown-link-check.json ../README.md ../CONTRIBUTING.md ../CHANGELOG.md *.md guide/*.md",
+    "export:pdf": "powershell -ExecutionPolicy Bypass -File build.ps1 -SkipDiagrams -SkipApi"
+  }
+}

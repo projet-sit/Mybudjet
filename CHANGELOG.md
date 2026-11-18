@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.5 (2026-11-18)
+
+### Supprimé
+
+- Animation de confirmation « coche verte » après enregistrement : l'animation/le message recouvraient le texte « Reste » et disparaisaient temporairement à chaque opération. Retour au comportement sans animation : le montant se met à jour silencieusement.
+
 ## 1.3.4 (2026-11-18)
 
 ### Modifié

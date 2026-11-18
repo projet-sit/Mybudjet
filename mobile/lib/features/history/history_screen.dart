@@ -61,8 +61,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       if (mounted) setState(() => _hidden.remove(tx.id));
       messenger.hideCurrentSnackBar();
       if (!mounted) return;
-      await showSuccessDialog(context);
-      // Restauration possible pendant quelques secondes via un bouton Annuler.
+            // Restauration possible pendant quelques secondes via un bouton Annuler.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -90,8 +89,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       await ref.read(transactionsProvider.notifier).refreshAll();
       if (_isSearching) await _runSearch();
       if (!mounted) return;
-      await showSuccessDialog(context);
-    } catch (e) {
+          } catch (e) {
       if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }

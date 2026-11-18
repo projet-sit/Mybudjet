@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +15,6 @@ import '../../models/transaction.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/currency_provider.dart';
 import '../../services/currency_service.dart';
-import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/outbox.dart';
@@ -36,6 +37,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   String _category = 'Alimentation';
   String? _categoryId;
   bool _saving = false;
+  int _shakeCount = 0;
   bool _addingCustom = false;
   final _customNameController = TextEditingController();
   final _customFocus = FocusNode();
@@ -213,15 +215,21 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   }
 
   Future<void> _save() async {
+    if (_saving) return; // anti double-tap pendant la validation
+    _saving = true;
     final code = CurrencyService.instance.current;
     final amount = enteredToXof(_amount, code);
     if (amount == null || amount <= 0) {
+      setState(() => _shakeCount++);
       _snack('Entre un montant');
+      _saving = false;
       return;
     }
     final wallet = ref.read(walletControllerProvider).value;
     if (wallet == null) {
-      _snack("Aucun portefeuille — crée-le d'abord");
+      setState(() => _shakeCount++);
+      _snack("Aucun portefeuille — créez-le d'abord");
+      _saving = false;
       return;
     }
 
@@ -238,7 +246,9 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
           savingsAmount: wallet.savingsAmount,
         );
         if (remaining != null && amount > remaining) {
+          setState(() => _shakeCount++);
           _snack('Montant supérieur au budget restant (${formatMoneyCurrent(remaining)})');
+          _saving = false;
           return;
         }
       }
@@ -248,69 +258,87 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     // (création à la validation de l'opération, jamais pendant la frappe).
     final custom = await _prepareCustomCategory();
     if (custom.errorMessage != null) {
+      setState(() => _shakeCount++);
       _snack(custom.errorMessage!);
+      _saving = false;
       return;
     }
 
-    setState(() => _saving = true);
-    var createdCategoryId = custom.createdId;
+    final tx = Transaction(
+      id: widget.editing?.id ?? '',
+      walletId: wallet.id,
+      type: _mode,
+      amount: amount,
+      category: custom.name,
+      categoryId: custom.categoryId ?? widget.editing?.categoryId,
+      date: widget.editing?.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now()),
+      time: widget.editing?.time ?? DateFormat('HH:mm').format(DateTime.now()),
+      paymentMethod: _mode == 'expense' ? (widget.editing?.paymentMethod ?? 'Espèces') : null,
+    );
+    final isEdit = widget.editing != null;
+
+    // Le panneau se ferme immédiatement (aucun spinner) ; la sauvegarde continue
+    // en arrière-plan. L'animation de confirmation démarre après la fermeture
+    // (post-frame) si — et seulement si — l'enregistrement réussit.
+    final txN = ref.read(transactionsProvider.notifier);
+    if (!mounted) {
+      _saving = false;
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    _saveRemote(
+      tx: tx,
+      walletId: wallet.id,
+      isEdit: isEdit,
+      createdCategoryId: custom.createdId,
+      txN: txN,
+      messenger: messenger,
+    );
+  }
+
+  /// Enregistrement en arrière-plan après fermeture du panneau.
+  /// Succès : animation de confirmation (via [TransactionsController.createTransaction]).
+  /// Échec : aucun événement ne part ; un message clair s'affiche.
+  Future<void> _saveRemote({
+    required Transaction tx,
+    required String walletId,
+    required bool isEdit,
+    required String? createdCategoryId,
+    required TransactionsController txN,
+    required ScaffoldMessengerState messenger,
+  }) async {
     try {
-      final tx = Transaction(
-        id: widget.editing?.id ?? '',
-        walletId: wallet.id,
-        type: _mode,
-        amount: amount,
-        category: custom.name,
-        categoryId: custom.categoryId ?? widget.editing?.categoryId,
-        date: widget.editing?.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now()),
-        time: widget.editing?.time ?? DateFormat('HH:mm').format(DateTime.now()),
-        paymentMethod: _mode == 'expense' ? (widget.editing?.paymentMethod ?? 'Espèces') : null,
-      );
-      WriteResult result;
-      if (widget.editing == null) {
-        result = await Outbox.instance.createTransaction(wallet.id, tx);
+      if (isEdit) {
+        await txN.updateTransaction(walletId, tx);
       } else {
-        result = await Outbox.instance.updateTransaction(wallet.id, tx);
+        await txN.createTransaction(tx);
       }
-      if (!result.queued) {
-        await ref.read(transactionsProvider.notifier).refreshAll();
-      } else {
-        ref.invalidate(dashboardControllerProvider);
-        ref.invalidate(walletControllerProvider);
-        ref.invalidate(transactionsProvider);
-        await ref.read(syncInfoProvider.notifier).refresh();
-      }
-      if (!mounted) return;
       HapticFeedback.mediumImpact();
-      if (result.queued) {
-        // Opération non encore confirmée par le serveur : feedback distinct (pas de faux succès).
-        showInfoSnackBar(
-          context,
-          'Enregistrée hors-ligne — synchronisation dès le retour du réseau',
-          icon: Icons.cloud_off_outlined,
-        );
-        Navigator.of(context).pop();
-        return;
-      }
-      // Boîte de succès affichée au-dessus de la feuille, puis on ferme la feuille.
-      await showSuccessDialog(context);
-      if (mounted) Navigator.of(context).pop();
-      createdCategoryId = null; // succès : on garde la catégorie créée
     } catch (e) {
-      // L'opération a échoué : on retire la catégorie créée dans ce flux pour
-      // ne pas laisser une catégorie partielle dans la liste.
+      // La catégorie créée dans ce flux est retirée pour ne pas laisser
+      // une catégorie partielle dans la liste.
       if (createdCategoryId != null) {
         try {
           await CategoryRepository.instance.delete(createdCategoryId);
-          ref.invalidate(categoriesProvider);
         } catch (_) {
           // Mieux vaut laisser la catégorie que l'opération perdue.
         }
       }
-      if (!mounted) return;
-      _snack(TransactionsController.messageFrom(e));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Enregistrement impossible : ${TransactionsController.messageFrom(e)}'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
   }
 
@@ -586,9 +614,12 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
               const SizedBox(height: 10),
               // Bouton désactivé pendant l'enregistrement ou si le montant dépasse
               // le reste du budget (message affiché juste au-dessus).
-              Opacity(
-                opacity: (_saving || exceedsBudget) ? 0.55 : 1.0,
-                child: Container(
+              // En cas d'échec, le bouton tremble légèrement.
+              _Shake(
+                trigger: _shakeCount,
+                child: Opacity(
+                  opacity: (_saving || exceedsBudget) ? 0.55 : 1.0,
+                  child: Container(
                   width: double.infinity,
                   height: 50,
                   decoration: BoxDecoration(
@@ -623,6 +654,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                     ),
                   ),
                 ),
+              ),
               ),
             ],
           ),
@@ -665,3 +697,49 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     );
   }
 }
+
+/// Tremblement horizontal amorti declenche par [trigger] (>= 1).
+/// Ignore si 'reduire les animations' est actif.
+class _Shake extends StatefulWidget {
+  const _Shake({required this.trigger, required this.child});
+
+  final int trigger;
+  final Widget child;
+
+  @override
+  State<_Shake> createState() => _ShakeState();
+}
+
+class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+
+  @override
+  void didUpdateWidget(covariant _Shake oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trigger != widget.trigger && widget.trigger > 0) {
+      if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return;
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        final offset = math.sin(t * math.pi * 5) * 10 * (1 - t);
+        return Transform.translate(offset: Offset(offset, 0), child: child);
+      },
+      child: widget.child,
+    );
+  }
+}
+

@@ -303,8 +303,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
         return;
       }
       if (!mounted) return;
-      await showSuccessDialog(context);
-    } catch (e) {
+          } catch (e) {
       if (!mounted) return;
       showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
@@ -337,8 +336,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             icon: Icons.cloud_off_outlined,
           );
         } else {
-          await showSuccessDialog(context);
-        }
+                  }
       } catch (e) {
         if (!mounted) return;
         showErrorSnackBar(context, TransactionsController.messageFrom(e));
@@ -424,8 +422,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             icon: Icons.cloud_off_outlined,
           );
         } else {
-          await showSuccessDialog(context);
-        }
+                  }
       } catch (e) {
         if (!mounted) return;
         showErrorSnackBar(context, TransactionsController.messageFrom(e));
@@ -476,8 +473,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
               icon: Icons.cloud_off_outlined,
             );
           } else {
-            await showSuccessDialog(context);
-          }
+                      }
         } catch (e) {
           if (!mounted) return;
           showErrorSnackBar(context, TransactionsController.messageFrom(e));

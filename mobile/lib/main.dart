@@ -16,6 +16,7 @@ import 'providers/onboarding_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/transaction_provider.dart';
 import 'providers/wallet_provider.dart';
+import 'features/success_feedback/widgets/success_feedback_overlay.dart';
 import 'routing/app_router.dart';
 import 'services/api_client.dart';
 import 'services/budget_alerts_service.dart';
@@ -146,6 +147,14 @@ class _MyAppState extends ConsumerState<MyApp> {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            child ?? const SizedBox.shrink(),
+            const SuccessFeedbackOverlay(),
+          ],
+        );
+      },
     );
   }
 }

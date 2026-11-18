@@ -64,7 +64,6 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
     try {
       await ref.read(walletControllerProvider.notifier).setSavings(amount);
       if (!mounted) return;
-      await showSuccessDialog(context);
     } catch (e) {
       if (!mounted) return;
       _snack(WalletController.messageFrom(e));

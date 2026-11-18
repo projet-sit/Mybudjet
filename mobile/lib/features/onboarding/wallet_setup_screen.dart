@@ -6,9 +6,9 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_logo.dart';import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../providers/currency_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../core/widgets/app_feedback.dart';
 import '../../services/currency_service.dart';
 
 /// Onboarding — fidèle à la maquette :
@@ -67,9 +67,8 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
     if (!mounted) return;
     final result = ref.read(walletControllerProvider);
     // En cas d'échec, le message est affiché sous le formulaire.
-    if (result.value != null) {
-      await showSuccessDialog(context);
-      if (mounted) context.go('/home');
+    if (result.value != null && mounted) {
+      context.go('/home');
     }
   }
 

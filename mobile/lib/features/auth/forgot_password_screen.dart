@@ -49,8 +49,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _step = 1;
         _tokenController.text = token; // Pré-rempli en développement.
       });
-      await showSuccessDialog(context);
-    } catch (e) {
+          } catch (e) {
       setState(() => _error = 'Impossible de demander une réinitialisation. Réessaie.');
     } finally {
       setState(() => _loading = false);
@@ -76,8 +75,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
-      await showSuccessDialog(context);
-      if (!mounted) return;
+      showInfoSnackBar(context, 'Mot de passe réinitialisé');
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       setState(() => _error = 'Lien de réinitialisation invalide ou expiré');

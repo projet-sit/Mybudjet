@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.4 (2026-11-18)
+
+### Modifié
+
+- Animation de confirmation « coche verte » (carré #059669 + coche tracée + onde, ≈ 1,2 s) affichée uniquement après enregistrement réussi d'une dépense, d'un revenu, d'un portefeuille ou d'une opération d'épargne — jamais pour photo, profil, réglages, suppression/modif, réinit., synchro ou échec (cf. docs/animation-confirmation.md).
+
 ## 1.3.3 (2026-11-18)
 
 ### Modifié

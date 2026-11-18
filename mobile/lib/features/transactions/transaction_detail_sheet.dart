@@ -4,12 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/date_format.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/transaction.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/data_repository.dart';
 import '../../widgets/transaction_tile.dart';
-import '../../core/widgets/app_feedback.dart';
 import 'quick_add_sheet.dart';
 
 /// Détail d'une opération (maquette) : montant, infos, Modifier / Supprimer.
@@ -44,8 +44,7 @@ class TransactionDetailSheet extends ConsumerWidget {
       await ref.read(transactionsProvider.notifier).refreshAll();
       if (!context.mounted) return;
       // La boîte de succès s'affiche AU-DESSUS de la fiche, puis on ferme la fiche.
-      await showSuccessDialog(context);
-      if (context.mounted) Navigator.of(context).pop();
+            if (context.mounted) Navigator.of(context).pop();
     } catch (e) {
       if (!context.mounted) return;
       showErrorSnackBar(context, TransactionsController.messageFrom(e));

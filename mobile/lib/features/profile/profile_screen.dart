@@ -46,8 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       await CacheService.instance.shareFile(path);
       if (!mounted) return;
-      await showSuccessDialog(context);
-    } catch (e) {
+          } catch (e) {
       if (mounted) {
         showErrorSnackBar(context, 'Export PDF impossible. Vérifie ta connexion puis réessaie.');
       }
@@ -117,8 +116,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
       await ref.read(profilePhotoProvider.notifier).setFromPick(source);
       if (context.mounted) {
-        await showSuccessDialog(context);
-      }
+              }
     } catch (_) {
       if (!context.mounted) return;
       showErrorSnackBar(context, 'Photo impossible. Vérifie les autorisations de la galerie/caméra.');
@@ -128,8 +126,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _removePhoto() async {
     await ref.read(profilePhotoProvider.notifier).clear();
     if (mounted) {
-      await showSuccessDialog(context);
-    }
+          }
   }
 
   Future<void> _showPhotoOptions() async {
@@ -578,8 +575,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       try {
         await ref.read(authControllerProvider.notifier).deleteAccount();
         if (!mounted) return;
-        await showSuccessDialog(context);
-        if (mounted) context.go('/login');
+                if (mounted) context.go('/login');
       } catch (e) {
         if (!mounted) return;
         showErrorSnackBar(context, AuthController.messageFrom(e));

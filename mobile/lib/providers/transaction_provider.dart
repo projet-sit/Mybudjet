@@ -12,6 +12,9 @@ import '../services/outbox.dart';
 import '../services/budget_alerts_service.dart';
 import '../core/search/transaction_search.dart';
 import '../providers/sync_provider.dart';
+import '../features/success_feedback/providers/success_feedback_provider.dart';
+import '../features/success_feedback/models/success_event.dart';
+import '../core/utils/money.dart';
 import 'wallet_provider.dart';
 
 /// État de la liste paginée + filtres (Phase 7).
@@ -72,6 +75,18 @@ class TransactionsState {
     );
   }
 }
+
+/// Identifiant de la dernière opération créée par l'utilisateur dans cette session.
+/// Null = aucun surlignage.
+class LastCreatedTransactionIdController extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setId(String? id) => state = id;
+}
+
+final lastCreatedTransactionIdProvider =
+    NotifierProvider<LastCreatedTransactionIdController, String?>(LastCreatedTransactionIdController.new);
 
 class TransactionsController extends AsyncNotifier<TransactionsState> {
   Map<String, String> _query(String walletId, TransactionsState s, {required bool firstPage}) {
@@ -174,6 +189,64 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
       await Outbox.instance.clearOverlayIfAllSynced();
     } catch (_) {
       // Cache complet non rafraîchi : on garde le dernier connu.
+    }
+  }
+
+  /// Crée une opération via l'Outbox et émet l'événement de succès UNIQUEMENT
+  /// dans la branche de succès (local ou serveur).
+  Future<void> createTransaction(Transaction tx) async {
+    final wallet = await ref.watch(walletControllerProvider.future);
+    if (wallet == null) return;
+
+    final result = await Outbox.instance.createTransaction(wallet.id, tx);
+
+    // Marque la ligne à surligner pour cette session.
+    ref.read(lastCreatedTransactionIdProvider.notifier).setId(tx.id);
+
+    if (!result.queued) {
+      try {
+        await refreshAll();
+      } catch (_) {
+        // Le repli cache prend le relais côté écrans ; l'animation doit partir quand même.
+      }
+    } else {
+      ref.invalidate(dashboardControllerProvider);
+      ref.invalidate(walletControllerProvider);
+      ref.invalidate(transactionsProvider);
+      try {
+        await ref.read(syncInfoProvider.notifier).refresh();
+      } catch (_) {
+        // L'icône de synchro se rattrapera au prochain retour sur l'écran.
+      }
+    }
+
+    // Déclenche l'animation de succès.
+    ref.read(successFeedbackProvider.notifier).emit(
+          SuccessEvent(
+            type: tx.isExpense ? SuccessEventType.expenseAdded : SuccessEventType.incomeAdded,
+            detail: formatMoneyCurrent(tx.amount),
+          ),
+        );
+  }
+
+  /// Met à jour une opération via l'Outbox. Pas d'animation de succès.
+  Future<void> updateTransaction(String walletId, Transaction tx) async {
+    final result = await Outbox.instance.updateTransaction(walletId, tx);
+    if (!result.queued) {
+      try {
+        await refreshAll();
+      } catch (_) {
+        // Le repli cache prend le relais ; la modification est bien enregistrée.
+      }
+    } else {
+      ref.invalidate(dashboardControllerProvider);
+      ref.invalidate(walletControllerProvider);
+      ref.invalidate(transactionsProvider);
+      try {
+        await ref.read(syncInfoProvider.notifier).refresh();
+      } catch (_) {
+        // Icône de synchro : rattrapage au prochain retour sur l'écran.
+      }
     }
   }
 

@@ -52,8 +52,7 @@ class HomeScreen extends ConsumerWidget {
       );
       await CacheService.instance.shareFile(path);
       if (context.mounted) {
-        await showSuccessDialog(context);
-      }
+              }
     } catch (e) {
       if (context.mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
@@ -109,8 +108,7 @@ class HomeScreen extends ConsumerWidget {
                       await ref.read(transactionsProvider.notifier).refreshAll();
                       if (context.mounted &&
                           ref.read(syncNoticeProvider) == null) {
-                        await showSuccessDialog(context);
-                      }
+                                              }
                     },
                   ),
                   IconButton(
@@ -236,6 +234,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 data: (dashboard) {
                   final items = dashboard?.latestTransactions ?? const [];
+                  final lastCreatedId = ref.watch(lastCreatedTransactionIdProvider);
                   if (items.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 28),
@@ -255,10 +254,19 @@ class HomeScreen extends ConsumerWidget {
                     children: [
                       for (var i = 0; i < items.length; i++) ...[
                         if (i > 0) Divider(height: 1, indent: 66, color: scheme.outline),
-                        TransactionTile(
-                          transaction: items[i],
-                          onTap: () => _openDetail(context, items[i]),
-                        ),
+                        if (items[i].id == lastCreatedId)
+                          _HighlightedTransactionRow(
+                            key: ValueKey('last-created-${items[i].id}'),
+                            child: TransactionTile(
+                              transaction: items[i],
+                              onTap: () => _openDetail(context, items[i]),
+                            ),
+                          )
+                        else
+                          TransactionTile(
+                            transaction: items[i],
+                            onTap: () => _openDetail(context, items[i]),
+                          ),
                       ],
                     ],
                   );
@@ -268,6 +276,123 @@ class HomeScreen extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Ligne de la dernière opération créée dans cette session : glisse dans la
+/// liste et se surligne en bleu clair, puis le surlignage s'estompe (~1 s)
+/// avant d'être entièrement retiré.
+class _HighlightedTransactionRow extends ConsumerStatefulWidget {
+  const _HighlightedTransactionRow({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_HighlightedTransactionRow> createState() => _HighlightedTransactionRowState();
+}
+
+class _HighlightedTransactionRowState extends ConsumerState<_HighlightedTransactionRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+
+  @override
+  void initState() {
+    super.initState();
+    _controller
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          ref.read(lastCreatedTransactionIdProvider.notifier).setId(null);
+        }
+      })
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const highlight = Color(0xFF7DD3FC); // bleu clair
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeOut.transform(_controller.value);
+        return Transform.translate(
+          offset: Offset(0.24 * (1 - t) * MediaQuery.sizeOf(context).width, 0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: highlight.withValues(alpha: 0.38 * (1 - _controller.value)),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _ResteCounter extends StatefulWidget {
+  const _ResteCounter({required this.value});
+
+  final int value;
+
+  @override
+  State<_ResteCounter> createState() => _ResteCounterState();
+}
+
+class _ResteCounterState extends State<_ResteCounter> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Tween<int> _tween;
+  int _from = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.value;
+    _tween = Tween<int>(begin: _from, end: widget.value);
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 650));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResteCounter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _tween = Tween<int>(begin: oldWidget.value, end: widget.value);
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = _tween.transform(_controller.value.clamp(0.0, 1.0)).round();
+        return Text(
+          formatMoneyCurrent(value),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 30,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
+          ),
+        );
+      },
     );
   }
 }
@@ -363,15 +488,7 @@ class _HeroCard extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(
-              formatMoneyCurrent(available),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 30,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
-              ),
-            ),
+            child: _ResteCounter(value: available),
           ),
           const SizedBox(height: 12),
           Row(

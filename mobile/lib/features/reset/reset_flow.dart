@@ -9,9 +9,9 @@ import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/profile_photo_provider.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../services/auth_repository.dart';
 import '../../models/user.dart';
-import '../../core/widgets/app_feedback.dart';
 import '../../services/cache_service.dart';
 import '../../services/currency_service.dart';
 import '../../services/outbox.dart';
@@ -104,8 +104,7 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
   await ref.read(authControllerProvider.notifier).revalidate();
 
   if (!context.mounted) return;
-  await showSuccessDialog(context);
-  if (!context.mounted) return;
+    if (!context.mounted) return;
   // L'app repart de zéro : création du premier portefeuille (comme après
   // inscription), pas les 3 écrans d'introduction.
   context.go('/wallet-setup');

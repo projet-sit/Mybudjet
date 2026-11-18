@@ -48,10 +48,10 @@ flowchart LR
 | Couche | Dossier | Rôle |
 |---|---|---|
 | Présentation | `lib/features/**` (auth, home, history, stats, budgets, savings, reset, profile, help, categories, shell, onboarding) | Écrans Material 3, thème clair/sombre (`AppTheme`), texte français simple |
-| État / application | `lib/providers/**` (Riverpod v3) | `AuthController`, `WalletController`, `TransactionsController`, `DashboardController`, `StatsController`, `BudgetsController`, `SyncController`, `CategoryController`, `OnboardingSeenNotifier`, `ThemeController`, `AlertsController`, `ShellTabController` |
-| Données | `lib/services/**` | `ApiClient` (Dio, intercepteurs auth/retry), `TransactionRepository`/`DataRepository`/`WalletRepository`, `CategoryRepository`, `BudgetAlertsService` (notifications locales), `Outbox` (file d'attente), `CacheService` (SharedPreferences), `TokenStorage`, `ErrorReporter` |
-| Modèles | `lib/models/**` | `Wallet`, `Transaction`, `User`, `AuthSession`, `DashboardData`, `StatsData`, `Budget`, `BudgetPeriod`… Montants entiers FCFA |
-| Transverse | `lib/core/**` | Thème, `date_format.dart` (JJ/MM/AAAA local), `money.dart` (`formatXof`), `search/` (recherche insensible accents), widgets partagés |
+| État / application | `lib/providers/**` (Riverpod v3) | `AuthController`, `WalletController`, `TransactionsController`, `DashboardController`, `StatsController`, `BudgetsController`, `SyncController`, `CategoryController`, `CurrencyController`, `OnboardingSeenNotifier`, `ThemeController`, `AlertsController`, `ShellTabController` |
+| Données | `lib/services/**` | `ApiClient` (Dio, intercepteurs auth/retry), `TransactionRepository`/`DataRepository`/`WalletRepository`, `CategoryRepository`, `BudgetAlertsService` (notifications locales), `Outbox` (file d'attente), `CacheService` (SharedPreferences), `CurrencyService` (devises, taux USD), `TokenStorage`, `ErrorReporter` |
+| Modèles | `lib/models/**` | `Wallet`, `Transaction`, `User`, `AuthSession`, `DashboardData`, `StatsData`, `Budget`, `BudgetPeriod`… Montants entiers stockés en XOF (conversion à l'affichage) |
+| Transverse | `lib/core/**` | Thème, `date_format.dart` (JJ/MM/AAAA local), `money.dart` (`formatMoney`, XOF/EUR/USD), `search/` (recherche insensible accents), widgets partagés (dont `app_feedback.dart` : SuccessDialog/feedback) |
 | Navigation | `lib/routing/**` | `app_router.dart` (GoRouter + `refreshListenable`), `app_redirect.dart` (fonction pure de redirection) |
 
 L'architecture n'applique **pas** à la lettre le trio data/domain/presentation : les modèles vivent dans `models/` et la logique de données dans `services/` ; c'est volontaire et cohérent pour la taille du projet.
@@ -66,7 +66,7 @@ L'architecture n'applique **pas** à la lettre le trio data/domain/presentation 
 
 - Un seul `GoRouter` (`routerProvider`), jamais recréé : `refreshListenable: _RouterTransitionNotifier` écoute auth + onboarding.
 - Redirection centralisée et **pure** dans `app_redirect.dart` (testée unitairement) : onboarding non vu → `/onboarding` ; vu → jamais ré-affiché ; restauration de session → `/splash` ; connecté sur écrans d'auth → `/home` ; non connecté → `/login`.
-- Routes : `/onboarding`, `/splash`, `/login`, `/register`, `/forgot-password`, `/wallet-setup`, `/home` (shell, 4 onglets), `/savings`, `/stats`, `/help` (Aide et FAQ).
+- Routes : `/onboarding`, `/splash`, `/login`, `/register`, `/forgot-password`, `/wallet-setup`, `/home` (shell, 4 onglets), `/savings`, `/stats`, `/help` (Aide et FAQ), `/privacy-policy` (Politique de confidentialité), `/my-categories` (Mes catégories).
 
 ## Backend : couches
 
@@ -117,7 +117,7 @@ Points clés : montant entier ; refus côté serveur si `amount > balance − sa
 
 ## Services et dépendances (mobile)
 
-Dépendances de production : `flutter_riverpod`, `go_router`, `dio`, `intl`, `flutter_dotenv`, `shared_preferences`, `connectivity_plus`, `uuid`, `fl_chart`, `path_provider`, `share_plus`, `pdf`, `package_info_plus`, `flutter_localizations`. Aucune dépendance Firebase.
+Dépendances de production : `flutter_riverpod`, `go_router`, `dio`, `intl`, `flutter_dotenv`, `shared_preferences`, `connectivity_plus`, `uuid`, `fl_chart`, `path_provider`, `share_plus`, `pdf`, `url_launcher`, `package_info_plus`, `flutter_localizations`. Aucune dépendance Firebase.
 
 ## Ce qui n'existe PAS
 

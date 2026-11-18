@@ -116,7 +116,7 @@ paths:
               displayName: "Awa"
               phone: "+22900000000"
               email: "awa@example.com"
-              password: "exemple-factice-123"
+              password: "exemple-factice"
       responses:
         "201":
           description: Compte créé
@@ -152,7 +152,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
             example:
               phone: "+22900000000"
-              password: "exemple-factice-123"
+              password: "exemple-factice"
       responses:
         "200":
           description: Session ouverte

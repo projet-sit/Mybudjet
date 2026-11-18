@@ -6,7 +6,10 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_logo.dart';import '../../core/utils/money.dart';
+import '../../providers/currency_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../core/widgets/app_feedback.dart';
+import '../../services/currency_service.dart';
 
 /// Onboarding — fidèle à la maquette :
 /// « Commençons par ton budget — Combien d'argent as-tu actuellement à disposition ? »
@@ -41,16 +44,18 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
   }
 
   int? _parseAmount() {
-    final cleaned = _amountController.text.replaceAll(RegExp(r'[\s,]'), '');
-    if (cleaned.isEmpty) return 0; // Le portefeuille peut démarrer à 0.
-    return int.tryParse(cleaned);
+    final code = CurrencyService.instance.current;
+    final raw = _amountController.text.trim();
+    if (raw.isEmpty) return 0; // Le portefeuille peut démarrer à 0.
+    return enteredToXof(raw, code);
   }
 
   Future<void> _createWallet() async {
     final amount = _parseAmount();
     if (amount == null || amount < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Montant invalide — entiers uniquement (ex : 150000)')),
+      showErrorSnackBar(
+        context,
+        'Montant invalide — ex : ${formatMoneyCurrent(150000, withCurrency: true)}',
       );
       return;
     }
@@ -62,7 +67,15 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
     if (!mounted) return;
     final result = ref.read(walletControllerProvider);
     // En cas d'échec, le message est affiché sous le formulaire.
-    if (result.value != null) context.go('/home');
+    if (result.value != null) {
+      await showSuccessDialog(
+        context,
+        title: 'Portefeuille créé !',
+        message: 'Votre portefeuille est prêt. Bienvenue dans MyBudget !',
+        duration: const Duration(milliseconds: 1400),
+      );
+      if (mounted) context.go('/home');
+    }
   }
 
   @override
@@ -134,20 +147,26 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
               // Montant initial en grand
               TextField(
                 controller: _amountController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                keyboardType: ref.watch(currencyControllerProvider).code == 'XOF'
+                    ? const TextInputType.numberWithOptions(decimal: false)
+                    : const TextInputType.numberWithOptions(decimal: true),
                 style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1),
                 textAlign: TextAlign.center,
                 inputFormatters: [
-                  // Entiers uniquement — les montants FCFA n'ont pas de décimales.
-                  FilteringTextInputFormatter.allow(RegExp(r'[\d\s]')),
+                  ref.watch(currencyControllerProvider).code == 'XOF'
+                      // Entiers uniquement — le FCFA n'a pas de décimales.
+                      ? FilteringTextInputFormatter.allow(RegExp(r'[\d\s]'))
+                      : FilteringTextInputFormatter.allow(RegExp(r'[\d,\.]')),
                 ],
                 onChanged: (value) {
+                  final code = ref.read(currencyControllerProvider).code;
+                  if (code != 'XOF') return; // EUR/USD : saisie libre à 2 décimales
                   // Espacement des milliers en direct : 150000 → 150 000
                   final digits = value.replaceAll(RegExp(r'\s'), '');
                   if (digits.isEmpty) return;
                   final parsed = int.tryParse(digits);
                   if (parsed != null) {
-                    final formatted = formatXof(parsed, withCurrency: false);
+                    final formatted = formatMoneyCurrent(parsed, withCurrency: false);
                     if (formatted != value) {
                       _amountController.value = TextEditingValue(
                         text: formatted,
@@ -156,10 +175,10 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
                     }
                   }
                 },
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: '0',
-                  suffixText: 'FCFA',
-                  suffixStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  suffixText: currencySymbol(ref.watch(currencyControllerProvider).code),
+                  suffixStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(height: 8),

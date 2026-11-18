@@ -27,7 +27,6 @@ Future<void> main() async {
   await initializeDateFormatting('fr_FR');
   final bytes = await TransactionPdfExportService.buildPdfBytes(
     walletName: 'Mon budget',
-    initialAmount: 100000,
     displayName: 'Ulrich',
     transactions: [
       _tx(id: '1', type: 'expense', description: 'Courses', amount: 15000),

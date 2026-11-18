@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
+import '../../providers/currency_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../services/currency_service.dart';
 
 /// Mon épargne : l'argent reste dans le même compte, en réserve.
 /// Disponible = solde − épargne. Aucun compte supplémentaire.
@@ -28,13 +31,21 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
   }
 
   int? _parseAmount() {
-    final cleaned = _amountController.text.replaceAll(RegExp(r'[\s,]'), '');
-    if (cleaned.isEmpty) return 0;
-    return int.tryParse(cleaned);
+    final code = CurrencyService.instance.current;
+    final raw = _amountController.text.trim();
+    if (raw.isEmpty) return 0; // Champ vide = 0 (permet « Tout récupérer »).
+    return enteredToXof(raw, code);
   }
 
-  void _setAmount(int amount) {
-    final text = amount == 0 ? '' : formatXof(amount, withCurrency: false);
+  void _setAmount(int amountXof) {
+    final code = CurrencyService.instance.current;
+    final String text;
+    if (code == 'XOF') {
+      text = amountXof == 0 ? '' : formatMoneyCurrent(amountXof, withCurrency: false);
+    } else {
+      final value = CurrencyService.convertFromXof(amountXof, code);
+      text = amountXof == 0 ? '' : value.toStringAsFixed(2).replaceAll('.', ',');
+    }
     _amountController.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -46,14 +57,18 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
     final wallet = ref.read(walletControllerProvider).value;
     if (wallet == null) return;
     if (amount < 0 || amount > wallet.balance) {
-      _snack('Montant invalide : entre 0 et ${formatXof(wallet.balance)}');
+      _snack('Montant invalide : entre 0 et ${formatMoneyCurrent(wallet.balance)}');
       return;
     }
     setState(() => _saving = true);
     try {
       await ref.read(walletControllerProvider.notifier).setSavings(amount);
       if (!mounted) return;
-      _snack('Épargne enregistrée : ${formatXof(amount)}');
+      await showSuccessDialog(
+        context,
+        title: 'Épargne enregistrée !',
+        message: 'Votre épargne a été mise à jour avec succès.',
+      );
     } catch (e) {
       if (!mounted) return;
       _snack(WalletController.messageFrom(e));
@@ -74,7 +89,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Tout récupérer ?'),
         content: Text(
-          'Les ${formatXof(wallet.savingsAmount)} épargnés reviennent dans ton Reste.',
+          'Les ${formatMoneyCurrent(wallet.savingsAmount)} épargnés reviennent dans ton Reste.',
         ),
         actions: [
           TextButton(
@@ -93,8 +108,27 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    showErrorSnackBar(context, message);
   }
+
+  /// Suggestions de montants ronds, exprimées en XOF (base), selon la devise active.
+  List<int> _quickAmounts(String code) {
+    switch (code) {
+      case 'EUR':
+        return const [10, 25, 50, 100].map(enteredEurToXof).toList();
+      case 'USD':
+        return const [10, 25, 50, 100].map(enteredUsdToXof).toList();
+      case 'XOF':
+      default:
+        return const [5000, 10000, 25000, 50000];
+    }
+  }
+
+  /// 10 € → XOF via la parité fixe (arrondi).
+  static int enteredEurToXof(num eur) => (eur * 655.957).round();
+
+  /// 10 $ → XOF via le taux du jour (ou de secours) (arrondi).
+  static int enteredUsdToXof(num usd) => CurrencyService.convertToXof(usd, 'USD');
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +184,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      formatXof(savings),
+                      formatMoneyCurrent(savings),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 32,
@@ -161,7 +195,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Reste à dépenser : ${formatXof(reste)}',
+                    'Reste à dépenser : ${formatMoneyCurrent(reste)}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
@@ -170,7 +204,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Solde total : ${formatXof(balance)}',
+                    'Solde total : ${formatMoneyCurrent(balance)}',
                     style: const TextStyle(color: Colors.white60, fontSize: 11),
                   ),
                 ],
@@ -184,7 +218,9 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: false),
+              keyboardType: ref.watch(currencyControllerProvider).code == 'XOF'
+                  ? const TextInputType.numberWithOptions(decimal: false)
+                  : const TextInputType.numberWithOptions(decimal: true),
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w800,
@@ -192,29 +228,37 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                 color: scheme.onSurface,
               ),
               textAlign: TextAlign.center,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s]'))],
+              inputFormatters: [
+                ref.watch(currencyControllerProvider).code == 'XOF'
+                    ? FilteringTextInputFormatter.allow(RegExp(r'[\d\s]'))
+                    : FilteringTextInputFormatter.allow(RegExp(r'[\d,\.]')),
+              ],
               onChanged: (value) {
-                final digits = value.replaceAll(RegExp(r'\s'), '');
-                if (digits.isEmpty) {
-                  setState(() {});
-                  return;
-                }
-                final parsed = int.tryParse(digits);
-                if (parsed != null) {
-                  final formatted = formatXof(parsed, withCurrency: false);
-                  if (formatted != value) {
-                    _amountController.value = TextEditingValue(
-                      text: formatted,
-                      selection: TextSelection.collapsed(offset: formatted.length),
-                    );
+                final code = ref.read(currencyControllerProvider).code;
+                if (code == 'XOF') {
+                  // Regroupement des milliers en direct (entiers uniquement).
+                  final digits = value.replaceAll(RegExp(r'\s'), '');
+                  if (digits.isEmpty) {
+                    setState(() {});
+                    return;
                   }
-                  setState(() {});
+                  final parsed = int.tryParse(digits);
+                  if (parsed != null) {
+                    final formatted = formatMoneyCurrent(parsed, withCurrency: false);
+                    if (formatted != value) {
+                      _amountController.value = TextEditingValue(
+                        text: formatted,
+                        selection: TextSelection.collapsed(offset: formatted.length),
+                      );
+                    }
+                  }
                 }
+                setState(() {});
               },
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: '0',
-                suffixText: 'FCFA',
-                suffixStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                suffixText: currencySymbol(ref.watch(currencyControllerProvider).code),
+                suffixStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 10),
@@ -223,7 +267,9 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  for (final amount in [5000, 10000, 25000, 50000])
+                  // Suggestions en devise active : montants ronds (les XOF sont
+                  // reconvertis proprement).
+                  for (final amount in _quickAmounts(ref.watch(currencyControllerProvider).code))
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: Material(
@@ -235,7 +281,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             child: Text(
-                              formatXof(amount, withCurrency: false),
+                              formatMoneyCurrent(amount, withCurrency: false),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -252,10 +298,10 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
             const SizedBox(height: 10),
             Text(
               pending == null
-                  ? 'Montant invalide — entiers uniquement'
+                  ? 'Montant invalide'
                   : invalid
-                      ? 'Montant trop élevé — tu as ${formatXof(balance)}'
-                      : 'Reste après épargne : ${formatXof(after)}',
+                      ? 'Montant trop élevé — tu as ${formatMoneyCurrent(balance)}'
+                      : 'Reste après épargne : ${formatMoneyCurrent(after)}',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: invalid ? scheme.error : scheme.onSurfaceVariant,

@@ -15,7 +15,7 @@ const List<FaqItem> faqItems = [
   ),
   FaqItem(
     'Comment noter une dépense ?',
-    'Depuis l’accueil, touche le bouton +. Choisis « Dépense », saisis le montant en FCFA, la catégorie, puis la date. Valide : la dépense est enregistrée et ton solde se met à jour.',
+    'Depuis l’accueil, touche le bouton +. Choisis « Dépense », saisis le montant dans la devise active, la catégorie, puis la date. Valide : la dépense est enregistrée et ton solde se met à jour.',
   ),
   FaqItem(
     'Comment noter un revenu ?',
@@ -43,7 +43,7 @@ const List<FaqItem> faqItems = [
   ),
   FaqItem(
     'Comment remettre mes comptes à zéro ?',
-    'Profil → « Réinitialiser tout ». Tout sera supprimé définitivement (portefeuilles, opérations, budgets, épargne, objectifs, catégories personnalisées) et ton compte repartira comme un compte neuf. Ton compte (téléphone et mot de passe) est conservé.',
+    'Profil → Zone de danger → « Supprimer tout ». Tout sera supprimé définitivement : opérations, catégories personnalisées et préférences (devise remise sur FCFA). Ton compte (téléphone et mot de passe) est conservé — tu repars comme un compte neuf. Avant de confirmer, tu peux d’abord télécharger tes données en PDF.',
   ),
   FaqItem(
     'Puis-je utiliser MyBudget sans internet ?',
@@ -66,13 +66,17 @@ const List<FaqItem> faqItems = [
     'Sur l’écran de connexion, touche « Mot de passe oublié » et suis les étapes. Ton mot de passe sera remplacé, et toutes tes sessions seront déconnectées pour des raisons de sécurité.',
   ),
   FaqItem(
+    'Comment changer de devise (FCFA, €, \$) ?',
+    'Profil → ligne « Devise ». Trois devises : FCFA (XOF, par défaut), Euro (parité fixe 1 EUR = 655,957 XOF) et Dollar (taux du jour affiché dans le panneau). Au changement, les montants sont convertis au taux du jour — ton compte reste stocké en FCFA en base.',
+  ),
+  FaqItem(
     'Comment supprimer mon compte ?',
     'Profil → « Supprimer mes données ». La suppression est définitive : ton compte et toutes tes opérations sont effacés. Pense à exporter ton historique avant, tu ne pourras plus le récupérer.',
   ),
 ];
 
 /// Écran « Aide et FAQ » (Profil → Aide et FAQ).
-/// 12 à 15 questions en accordéon. Texte intégré : fonctionne hors-ligne.
+/// Questions en accordéon. Texte intégré : fonctionne hors-ligne.
 class HelpScreen extends StatefulWidget {
   const HelpScreen({super.key});
 

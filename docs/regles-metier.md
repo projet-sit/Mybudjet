@@ -3,7 +3,7 @@
 ## Sommaire
 
 - [Résumé](#résumé)
-- [Montants : entiers FCFA partout](#montants--entiers-fcfa-partout)
+- [Montants : entiers XOF stockés, devises à l'affichage](#montants--entiers-xof-stockés-devises-à-laffichage)
 - [Dates : stockage UTC, affichage local](#dates--stockage-utc-affichage-local)
 - [Solde et « Reste »](#solde-et--reste-)
 - [Portefeuille](#portefeuille)
@@ -13,17 +13,20 @@
 - [Catégories personnalisées](#catégories-personnalisées)
 - [Objectifs d'épargne (goals)](#objectifs-dépargne-goals)
 - [Catégories par défaut](#catégories-par-défaut)
+- [Recherche (Opérations)](#recherche-opérations)
 - [Exemples chiffrés (fictifs)](#exemples-chiffrés-fictifs)
 
 ## Résumé
 
-Le solde est recalculé côté serveur à chaque écriture, dans une transaction avec verrou ; le « Reste » affiché = solde − épargne. L'épargne est une réserve dans le même portefeuille et n'entre jamais dans les dépenses/statistiques. Les budgets alertent à 50 % / 80 % / 100 % et notifient en local à 80 % et 100 %. La réinitialisation est atomique et définitive (voir [Réinitialisation complète](#réinitialisation-complète-du-compte-comme-neuf)).
+Le solde est recalculé côté serveur à chaque écriture, dans une transaction avec verrou ; le « Reste » affiché = solde − épargne. L'épargne est une réserve dans le même portefeuille et n'entre jamais dans les dépenses/statistiques. Les budgets alertent à 50 % / 80 % / 100 % et notifient en local à 80 % et 100 %. La réinitialisation est atomique et définitive (voir [Supprimer tout (Zone de danger)](#supprimer-tout-zone-de-danger)).
 
-## Montants : entiers FCFA partout
+## Montants : entiers XOF stockés, devises à l'affichage
 
-- Type unique : **entier** (`BIGINT` SQL, `int` Dart). Aucune décimale nulle part. `isValidAmount`/`parseAmount` (backend), `formatXof` (mobile : « 155 000 FCFA »).
+- Type unique : **entier** (`BIGINT` SQL, `int` Dart). Aucune décimale nulle part **en base**. `isValidAmount`/`parseAmount` (backend), `formatMoney` (mobile : « 155 000 FCFA », « 38,11 € », « 41.20 $ »).
 - `Number.isSafeInteger` exigé ; un montant ≤ 0 est rejeté (400).
-- Devise : `XOF` (FCFA), non modifiable dans l'UI (« Devise — FCFA (XOF) »).
+- **Devise de référence : XOF** (FCFA). Le montant n'est JAMAIS réécrit lors d'un changement de devise : la conversion n'existe qu'à l'affichage et à la saisie (`affiché = montantXOF × taux`, `XOF = saisi / taux`).
+- 3 devises : **XOF** (défaut, entiers, « FCFA »), **EUR** (parité fixe officielle 1 EUR = 655,957 XOF, 2 décimales), **USD** (taux variable via l'API publique open.er-api.com, mis en cache avec date de mise à jour, taux de secours en dur hors ligne, 2 décimales). Sélecteur : Profil → ligne « Devise » (confirmation « Les montants seront convertis au taux du jour ») ; la date du taux USD est affichée dans le panneau.
+- Saisie en devise active : le pavé numérique autorise une virgule + 2 décimales pour EUR/USD (entiers pour XOF) ; la conversion vers XOF est faite à l'enregistrement (arrondi).
 
 ## Dates : stockage UTC, affichage local
 
@@ -112,20 +115,24 @@ stateDiagram-v2
 - **Unicité par (propriétaire, type, nom normalisé)** : doublon = fusion automatique côté serveur (409 `CATEGORY_EXISTS` avec la catégorie existante — le client la sélectionne et affiche « Cette catégorie existe déjà, elle est sélectionnée ») ; sensibilité casse/accents ignorée, y compris contre les catégories par défaut.
 - **Maximum 30 catégories personnalisées par type** (dépense ou revenu) ; au-delà, erreur 400.
 - **Ordre d'affichage** : catégories par défaut (ordre produit) → personnalisées (par nom) → « Autres » en dernier, séparément pour dépenses et revenus.
-- **Création** : dans le sélecteur de catégorie, « Autres » ouvre un champ « Nom de la catégorie » avec un bouton Valider. Vide → l'opération reste en « Autres ». Hors-ligne : création en file d'attente avec id UUID client ; conflit au retour réseau = fusion sur l'existante (remapping automatique des transactions créées hors-ligne).
+- **Création** : dans le sélecteur de catégorie, « Autres » ouvre un champ « Nom de la catégorie » avec un bouton Valider. Le nom est **obligatoire** (espaces retirés, 2 à 30 caractères) et sa **première lettre est mise en majuscule** automatiquement ; les doublons sont fusionnés via la normalisation (avec ou sans majuscules/accents). Si l'utilisateur tape un nom sans toucher « Valider » puis « Enregistrer », la catégorie est créée automatiquement avant l'enregistrement de l'opération. Hors-ligne : création en file d'attente avec id UUID client ; conflit au retour réseau = fusion sur l'existante (remapping automatique des transactions créées hors-ligne).
 - **Modification / renommage** : Profil → « Mes catégories » ; le renommage se propage au texte dénormalisé des opérations et budgets liés (même transaction SQL).
 - **Suppression** : les opérations liées passent en « Autres » (jamais perdues) ; les budgets liés sont supprimés **avec confirmation** (409 `CATEGORY_HAS_BUDGET` d'abord, puis `confirmBudgets=1`).
 - **Recherche** : le nom est cherchable (insensible accents), comme les défauts. **Export CSV** : le texte est réécrit lors des renommages. **Stats** : réparties par catégorie comme les défauts. **Budgets** : une catégorie personnalisée accepte un budget (`categoryId` prioritaire sur le nom).
 
-## Réinitialisation complète du compte ("comme neuf")
+## Supprimer tout (Zone de danger)
 
 - Route : `POST /api/v1/me/reset` (JWT) — **une seule transaction PostgreSQL** : tout ou rien.
 - Supprimé **définitivement** : portefeuilles, opérations, budgets, épargne (colonnes), objectifs, périodes et archives, catégories personnalisées, historique du montant initial. Les catégories par défaut sont conservées (elles n'appartiennent à personne).
-- Conservés : compte (téléphone, e-mail, mot de passe, sessions), `data_epoch` **incrémenté** ; préférences de l'appareil (thème, langue, interrupteurs).
+- Conservés : compte (téléphone, e-mail, mot de passe, sessions), `data_epoch` **incrémenté** ; préférences de l'appareil (thème, langue, interrupteurs). La devise est remise sur **XOF**.
 - **Autres appareils** : au prochain `GET /auth/me`, si `dataEpoch` a changé, le cache local et la file d'attente sont effacés et l'app se recharge — sans renvoyer d'anciennes opérations (elles ne ressuscitent pas de données).
-- **Client** : après succès, purge complète du cache local + file d'attente, redirection vers la création du premier portefeuille (comme juste après l'inscription), jamais vers les 3 écrans d'introduction.
-- **Hors-ligne** : la réinitialisation est refusée avec « Connexion requise pour réinitialiser ».
-- **Anti-erreur** : écran avec liste de ce qui sera supprimé + export CSV possible avant + confirmation forte (taper `REINITIALISER`), distincte de « Supprimer mon compte ».
+- **Client** : Profil → Zone de danger → **Supprimer tout** (menu ⋯ de la carte budget sur l'accueil : même flux).
+  1. Dialogue : **Télécharger mes données en PDF** (génère `operations_AAAA-MM-JJ.pdf`, partage, retour au dialogue) / **Supprimer sans télécharger** / **Annuler**.
+  2. Confirmation finale : « Cette action est irréversible. Toutes vos opérations, catégories personnalisées et préférences seront supprimées. » → **Supprimer définitivement**.
+  3. Après succès, purge complète du cache local + file d'attente + devise remise sur XOF, puis redirection vers la création du premier portefeuille (jamais vers les 3 écrans d'introduction).
+- **Hors-ligne** : la réinitialisation est refusée avec « Connexion requise pour tout supprimer ».
+- **Anti-erreur** : PDF téléchargeable avant suppression ; aucune confirmation n'est sautée ; succession de deux dialogues.
+- Distincte de **Supprimer mon compte** (Profil → « Supprimer mes données ») : la suppression de compte efface aussi le compte (et non les seuls contenus).
 
 ## Objectifs d'épargne (goals)
 
@@ -140,6 +147,14 @@ stateDiagram-v2
 - Revenus (5) : Salaire, Business, Cadeau, Bourse, Autres.
 - Épargne : « Épargne » (imposé par l'API).
 - Modes de paiement : Espèces, Mobile Money, Carte, Virement (défaut « Espèces » pour une dépense).
+
+## Recherche (Opérations)
+
+- Filtre **en temps réel**, debounce **~300 ms** ; recherche sur tout l'historique local (cache + overlay des opérations en attente), jamais limité aux 30 dernières lignes de l'écran.
+- Critères : note (description), **catégorie** (défauts et personnalisées), montant (« 10000 », « 10 000 », « -10000 »), date (« 14/11 », « novembre », « 14/11/2026 »), type (« dépense », « revenu », « épargne »), portefeuille.
+- Insensible à la casse et aux accents (« etudes » trouve « Études »).
+- Aucun résultat → « Aucune opération trouvée » ; la croix efface la recherche et rend la liste complète.
+- Le filtrage est exécuté hors du thread UI (isolate) avec repli synchrone, et **ne peut jamais rester en chargement indéfiniment** : toute erreur bascule sur le repli local ou affiche l'état vide.
 
 ## Exemples chiffrés (fictifs)
 

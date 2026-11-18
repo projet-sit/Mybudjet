@@ -30,7 +30,6 @@ void main() {
   test('buildPdfBytes génère un PDF valide avec du contenu réel', () async {
     final bytes = await TransactionPdfExportService.buildPdfBytes(
       walletName: 'Mon budget',
-      initialAmount: 100000,
       displayName: 'E2E Testeur',
       transactions: [
         _tx(id: '1', type: 'expense', description: 'Courses'),
@@ -49,7 +48,6 @@ void main() {
   test('buildPdfBytes génère un PDF valide même sans transaction', () async {
     final bytes = await TransactionPdfExportService.buildPdfBytes(
       walletName: 'Mon budget',
-      initialAmount: 0,
       transactions: const [],
     );
     final header = String.fromCharCodes(bytes.take(5));

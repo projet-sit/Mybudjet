@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/category_names.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/category.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/category_provider.dart';
@@ -68,13 +69,17 @@ class _MyCategoriesScreenState extends ConsumerState<MyCategoriesScreen> {
       final res = await CategoryRepository.instance.rename(category.id, check.value);
       if (!mounted) return;
       if (res.existed) {
-        _snack('Cette catégorie existe déjà, elle est sélectionnée');
+        showInfoSnackBar(context, 'Cette catégorie existe déjà, elle est sélectionnée');
       } else {
-        _snack('Catégorie renommée en « ${res.category.name} »');
+        await showSuccessDialog(
+          context,
+          title: 'Catégorie renommée !',
+          message: 'Votre catégorie a été renommée avec succès.',
+        );
       }
       await _reload();
     } catch (e) {
-      if (mounted) _snack(TransactionsController.messageFrom(e));
+      if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -87,7 +92,11 @@ class _MyCategoriesScreenState extends ConsumerState<MyCategoriesScreen> {
     try {
       await CategoryRepository.instance.delete(category.id);
       if (!mounted) return;
-      _snack('« ${category.name} » supprimée — les opérations passent en Autres');
+      await showSuccessDialog(
+        context,
+        title: 'Catégorie supprimée !',
+        message: 'Les opérations passent en « Autres » et ne sont pas perdues.',
+      );
       await _reload();
       return;
     } on BudgetLinkedException catch (linked) {
@@ -119,7 +128,7 @@ class _MyCategoriesScreenState extends ConsumerState<MyCategoriesScreen> {
       );
       if (ok != true) return;
     } catch (e) {
-      if (mounted) _snack(TransactionsController.messageFrom(e));
+      if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
       return;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -129,10 +138,14 @@ class _MyCategoriesScreenState extends ConsumerState<MyCategoriesScreen> {
     try {
       await CategoryRepository.instance.delete(category.id, confirmBudgets: true);
       if (!mounted) return;
-      _snack('« ${category.name} » supprimée (et son budget)');
+      await showSuccessDialog(
+        context,
+        title: 'Catégorie supprimée !',
+        message: 'La catégorie et son budget ont été supprimés.',
+      );
       await _reload();
     } catch (e) {
-      if (mounted) _snack(TransactionsController.messageFrom(e));
+      if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -167,7 +180,7 @@ class _MyCategoriesScreenState extends ConsumerState<MyCategoriesScreen> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    showErrorSnackBar(context, message);
   }
 
   @override

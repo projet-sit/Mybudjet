@@ -49,7 +49,7 @@ Mots de passe hashés bcrypt, JWT access 1 h + refresh 30 j hashé SHA-256 et ro
 |---|---|---|
 | Téléphone (ou e-mail historique) | Oui | Connexion, reset de mot de passe |
 | Nom d'affichage | Oui | Personnalisation |
-| Devise (fixée XOF) | Non | Affichage |
+| Devise (préférence d'affichage : XOF, EUR ou USD) | Non | Mise en forme des montants (conversion à l'affichage, stockage toujours en XOF) |
 | Portefeuilles, transactions, budgets, périodes, objectifs, épargne | Oui | Fonctionnement de l'app |
 | Catégories personnalisées (nom de catégorie choisi par l'utilisateur) | Oui (si créées) | Opérations, budgets, recherche, statistiques |
 | Rapports de plantage (message, stack tronquée, écran, version) | Optionnel | Stabilité |
@@ -63,11 +63,11 @@ Mots de passe hashés bcrypt, JWT access 1 h + refresh 30 j hashé SHA-256 et ro
 - Aucune donnée n'est envoyée en clair ; aucun tracker publicitaire.
 - À la déconnexion, la session est effacée du téléphone ; les données restent sur le serveur (réinstallables par reconnexion).
 
-## Suppression du compte
+## Suppression et » Supprimer tout«
 
-- Profil → « Supprimer mes données » : irréversible, confirmation forte (dialog + exigence de réseau + outbox vide).
-- Supprime en cascade : compte, portefeuilles, transactions, budgets, périodes (y compris archives et snapshots), objectifs, épargne, catégories personnalisées, tokens.
-- Recommandation : exporter le PDF avant suppression.
+- Profil → Zone de danger → **Supprimer tout** : irréversible, en deux dialogues (télécharger en PDF / supprimer sans télécharger, puis confirmation finale) ; efface opérations, catégories personnalisées et préférences (devise remise sur XOF) sans supprimer le compte. Autres appareils : `data_epoch` incrémenté → cache local et file d'attente effacés au prochain contact.
+- Profil → « Supprimer mes données » : irréversible, confirmation forte ; supprime en cascade le compte et toutes les données métier.
+- Recommandation : exporter le PDF avant l'un ou l'autre.
 
 ## Notifications locales
 

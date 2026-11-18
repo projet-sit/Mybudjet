@@ -84,10 +84,24 @@ void main() {
     expect(find.text('+10 000'), findsNothing);
   });
 
-  test('formatXof groupe les milliers', () {
-    expect(formatXof(150000), '150 000 FCFA');
-    expect(formatXof(150000, withCurrency: false), '150 000');
-    expect(formatXof(0), '0 FCFA');
+  test('formatMoney groupe les milliers (XOF)', () {
+    expect(formatMoney(150000), '150 000 FCFA');
+    expect(formatMoney(150000, withCurrency: false, currency: 'XOF'), '150 000');
+    expect(formatMoney(0), '0 FCFA');
+  });
+
+  test('formatMoney : EUR et USD à 2 décimales', () {
+    expect(formatMoney(655957, currency: 'EUR'), '1 000,00 €');
+    expect(formatMoney(25000, withCurrency: false, currency: 'EUR'), '38,11');
+    expect(formatMoney(1000000, currency: 'USD'), '1,750.00 \$');
+    expect(formatMoney(1000000, withCurrency: false, currency: 'USD'), '1,750.00');
+  });
+
+  test('formatMoney : EUR/USD convertissent depuis XOF (référence)', () {
+    // 25 000 XOF = 25 000 / 655,957 EUR
+    expect(formatMoney(25000, currency: 'EUR'), '38,11 €');
+    // XOF : entiers uniquement, pas de conversion
+    expect(formatMoney(25000, currency: 'XOF'), '25 000 FCFA');
   });
 
   test('formatDateTimeFr produit JJ/MM/AAAA · HH:mm en heure locale', () {

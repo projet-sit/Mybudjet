@@ -110,7 +110,7 @@ class StatsScreen extends ConsumerWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Moyenne : ${formatXof(stats.averageDaily)} / jour',
+                          'Moyenne : ${formatMoneyCurrent(stats.averageDaily)} / jour',
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.primary),
                         ),
                       ),
@@ -153,7 +153,7 @@ class StatsScreen extends ConsumerWidget {
                                       Text(
                                         bucket.value == 0
                                             ? ''
-                                            : formatXof(bucket.value, withCurrency: false),
+                                            : formatMoneyCurrent(bucket.value, withCurrency: false),
                                         maxLines: 1,
                                         overflow: TextOverflow.clip,
                                         style: TextStyle(
@@ -256,7 +256,7 @@ class StatsScreen extends ConsumerWidget {
                               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                             ),
                             Text(
-                              formatXof(wallet?.savingsAmount ?? 0),
+                              formatMoneyCurrent(wallet?.savingsAmount ?? 0),
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w900,
@@ -274,7 +274,7 @@ class StatsScreen extends ConsumerWidget {
                             style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant),
                           ),
                           Text(
-                            formatXof(wallet?.available ?? 0),
+                            formatMoneyCurrent(wallet?.available ?? 0),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -372,7 +372,7 @@ class StatsScreen extends ConsumerWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              formatXof(amount),
+              formatMoneyCurrent(amount),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: color),
             ),
           ),
@@ -394,7 +394,7 @@ class StatsScreen extends ConsumerWidget {
               ),
             ),
             Text(
-              '${formatXof(share.total, withCurrency: false)} · ${share.percent}%',
+              '${formatMoneyCurrent(share.total, withCurrency: false)} · ${share.percent}%',
               style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant),
             ),
           ],

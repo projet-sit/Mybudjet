@@ -90,7 +90,7 @@ class WalletController extends AsyncNotifier<Wallet?> {
     final current = state.value;
     if (current == null) return;
     if (newAmount < 0 || newAmount > current.balance) {
-      throw StateError('Montant invalide — entre 0 et ${formatXof(current.balance)}');
+      throw StateError('Montant invalide — entre 0 et ${formatMoneyCurrent(current.balance)}');
     }
     final delta = newAmount - current.savingsAmount;
     if (delta == 0) {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/dashboard.dart';
 import '../../models/transaction.dart';
 import '../../models/wallet.dart';
@@ -42,20 +43,26 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final wallet = ref.read(walletControllerProvider).value;
     if (wallet == null) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
-      // Export PDF (comme avant), généré à partir du backend réel.
+      // Export PDF (comme avant), généré à partir du backend réel (repli : cache local).
       final path = await TransactionPdfExportService.export(
         walletId: wallet.id,
         walletName: wallet.name,
-        initialAmount: wallet.initialAmount,
         displayName: ref.read(authControllerProvider).value?.user.displayName,
       );
       await CacheService.instance.shareFile(path);
+      if (context.mounted) {
+        await showSuccessDialog(
+          context,
+          title: 'Export PDF généré !',
+          message: 'Votre relevé des opérations a été généré avec succès.',
+        );
+      }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(TransactionsController.messageFrom(e))));
+      if (context.mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }
+
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -106,8 +113,11 @@ class HomeScreen extends ConsumerWidget {
                       await ref.read(transactionsProvider.notifier).refreshAll();
                       if (context.mounted &&
                           ref.read(syncNoticeProvider) == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Synchronisation terminée')),
+                        await showSuccessDialog(
+                          context,
+                          title: 'Synchronisation terminée !',
+                          message: 'Toutes vos opérations sont à jour.',
+                          duration: const Duration(milliseconds: 1200),
                         );
                       }
                     },
@@ -363,7 +373,7 @@ class _HeroCard extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              formatXof(available),
+              formatMoneyCurrent(available),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 30,
@@ -439,7 +449,7 @@ class _Pill extends StatelessWidget {
               children: [
                 Text(label, style: const TextStyle(color: Colors.white70, fontSize: 9.5)),
                 Text(
-                  formatXof(amount, withCurrency: false),
+                  formatMoneyCurrent(amount, withCurrency: false),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -534,7 +544,7 @@ class _BudgetCard extends ConsumerWidget {
                       itemBuilder: (context) => const [
                         PopupMenuItem(
                           value: 'reset',
-                          child: Text('Réinitialiser tout'),
+                          child: Text('Supprimer tout'),
                         ),
                       ],
                     ),
@@ -542,7 +552,7 @@ class _BudgetCard extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${formatXof(dashboard.totalExpenses, withCurrency: false)} dépensés sur ${formatXof(computedBase, withCurrency: false)} FCFA',
+                  '${formatMoneyCurrent(dashboard.totalExpenses)} dépensés sur ${formatMoneyCurrent(computedBase)}',
                   style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
@@ -563,7 +573,7 @@ class _BudgetCard extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    'Encore ${formatXof(remaining, withCurrency: false)} FCFA',
+                    'Encore ${formatMoneyCurrent(remaining)}',
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.primary),
                   ),
                 ),
@@ -665,12 +675,12 @@ class _SavingsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formatXof(wallet.savingsAmount),
+                    formatMoneyCurrent(wallet.savingsAmount),
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: scheme.primary),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Reste à dépenser : ${formatXof(wallet.available)}',
+                    'Reste à dépenser : ${formatMoneyCurrent(wallet.available)}',
                     style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant),
                   ),
                 ],

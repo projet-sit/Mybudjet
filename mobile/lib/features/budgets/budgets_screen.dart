@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
+import '../../providers/currency_provider.dart';
+import '../../services/currency_service.dart';
 import '../../models/category.dart';
 import '../../models/dashboard.dart';
 import '../../providers/app_prefs_provider.dart';
@@ -143,9 +146,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       if (b.alertLevel > previous && b.alertLevel >= 50) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(BudgetsController.alertMessage(b))),
-          );
+          showWarningSnackBar(context, BudgetsController.alertMessage(b));
         });
       }
       _alerted[b.id] = b.alertLevel;
@@ -193,7 +194,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurface),
                     ),
                     Text(
-                      '${formatXof(b.spent, withCurrency: false)} / ${formatXof(b.limitAmount, withCurrency: false)} FCFA',
+                      '${formatMoneyCurrent(b.spent)} / ${formatMoneyCurrent(b.limitAmount)}',
                       style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                     ),
                   ],
@@ -235,7 +236,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Reste ${formatXof(b.remaining)}',
+                  'Reste ${formatMoneyCurrent(b.remaining)}',
                   style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                 ),
               ),
@@ -290,12 +291,27 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
   Future<void> _adjust(Budget b, int delta) async {
     final next = (b.limitAmount + delta).clamp(1000, 100000000);
     try {
-      await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, next);
+      final queued = await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, next);
+      if (queued) {
+        if (mounted) {
+          showInfoSnackBar(
+            context,
+            'Ajustement enregistré hors-ligne',
+            icon: Icons.cloud_off_outlined,
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      await showSuccessDialog(
+        context,
+        title: 'Limite ajustée !',
+        message: 'Votre budget a été mis à jour.',
+        duration: const Duration(milliseconds: 1100),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(TransactionsController.messageFrom(e))),
-      );
+      showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }
 
@@ -317,12 +333,24 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
     );
     if (confirmed == true) {
       try {
-        await ref.read(budgetsControllerProvider.notifier).remove(b.id);
+        final queued = await ref.read(budgetsControllerProvider.notifier).remove(b.id);
+        if (!mounted) return;
+        if (queued) {
+          showInfoSnackBar(
+            context,
+            'Suppression enregistrée hors-ligne — synchronisation dès le retour du réseau',
+            icon: Icons.cloud_off_outlined,
+          );
+        } else {
+          await showSuccessDialog(
+            context,
+            title: 'Budget supprimé !',
+            message: 'Votre budget a été supprimé avec succès.',
+          );
+        }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TransactionsController.messageFrom(e))),
-        );
+        showErrorSnackBar(context, TransactionsController.messageFrom(e));
       }
     }
   }
@@ -330,12 +358,12 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
   Future<void> _createBudgetDialog() async {
     final existing = ref.read(budgetsControllerProvider).value ?? const <Budget>[];
     final used = existing.map((b) => b.category).toSet();
+    final currencyCode = ref.read(currencyControllerProvider).code;
+    final isXof = currencyCode == 'XOF';
     final categories = ref.read(expenseCategoriesProvider);
     final available = categories.where((c) => !used.contains(c.name)).toList();
     if (available.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Un budget existe déjà pour chaque catégorie.')),
-      );
+      showInfoSnackBar(context, 'Un budget existe déjà pour chaque catégorie.');
       return;
     }
 
@@ -360,9 +388,15 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: amountController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(hintText: 'Limite (ex : 30000)'),
+                  keyboardType: isXof
+                      ? TextInputType.number
+                      : const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    isXof
+                        ? FilteringTextInputFormatter.digitsOnly
+                        : FilteringTextInputFormatter.allow(RegExp(r'[\d,\.]')),
+                  ],
+                  decoration: InputDecoration(hintText: 'Limite (${currencySymbol(currencyCode)})'),
                 ),
               ],
             ),
@@ -373,7 +407,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
               ),
               FilledButton(
                 onPressed: () {
-                  final amount = int.tryParse(amountController.text.replaceAll(' ', ''));
+                  final amount = enteredToXof(amountController.text, currencyCode);
                   if (amount == null || amount <= 0) return;
                   Navigator.pop(dialogContext, (category: category.name, categoryId: category.id, amount: amount));
                 },
@@ -386,31 +420,55 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
     );
     if (result != null) {
       try {
-        await ref.read(budgetsControllerProvider.notifier).create(
+        final queued = await ref.read(budgetsControllerProvider.notifier).create(
               category: result.category,
               limitAmount: result.amount,
               categoryId: result.categoryId,
             );
+        if (!mounted) return;
+        if (queued) {
+          showInfoSnackBar(
+            context,
+            'Budget enregistré hors-ligne — synchronisation dès le retour du réseau',
+            icon: Icons.cloud_off_outlined,
+          );
+        } else {
+          await showSuccessDialog(
+            context,
+            title: 'Budget créé !',
+            message: 'Votre budget a été créé avec succès.',
+          );
+        }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TransactionsController.messageFrom(e))),
-        );
+        showErrorSnackBar(context, TransactionsController.messageFrom(e));
       }
     }
   }
 
   Future<void> _editBudgetDialog(Budget b) async {
-    final controller = TextEditingController(text: '${b.limitAmount}');
+    final code = ref.read(currencyControllerProvider).code;
+    final isXof = code == 'XOF';
+    // Le champ réaffiche la limite dans la devise active (pré-remplie).
+    final prefill = isXof
+        ? '${b.limitAmount}'
+        : CurrencyService.convertFromXof(b.limitAmount, code).toStringAsFixed(2).replaceAll('.', ',');
+    final controller = TextEditingController(text: prefill);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('Budget ${b.category}'),
         content: TextField(
           controller: controller,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(hintText: 'Nouvelle limite'),
+          keyboardType: isXof
+              ? TextInputType.number
+              : const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            isXof
+                ? FilteringTextInputFormatter.digitsOnly
+                : FilteringTextInputFormatter.allow(RegExp(r'[\d,\.]')),
+          ],
+          decoration: InputDecoration(hintText: 'Nouvelle limite (${currencySymbol(code)})'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Annuler')),
@@ -419,15 +477,27 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       ),
     );
     if (confirmed == true) {
-      final amount = int.tryParse(controller.text.replaceAll(' ', ''));
+      final amount = enteredToXof(controller.text, code);
       if (amount != null && amount > 0) {
         try {
-          await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, amount);
+          final queued = await ref.read(budgetsControllerProvider.notifier).updateLimit(b.id, amount);
+          if (!mounted) return;
+          if (queued) {
+            showInfoSnackBar(
+              context,
+              'Limite enregistrée hors-ligne — synchronisation dès le retour du réseau',
+              icon: Icons.cloud_off_outlined,
+            );
+          } else {
+            await showSuccessDialog(
+              context,
+              title: 'Limite mise à jour !',
+              message: 'Votre budget a été mis à jour avec succès.',
+            );
+          }
         } catch (e) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(TransactionsController.messageFrom(e))),
-          );
+          showErrorSnackBar(context, TransactionsController.messageFrom(e));
         }
       }
     }

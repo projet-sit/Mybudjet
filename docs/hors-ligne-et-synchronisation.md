@@ -25,6 +25,7 @@ SharedPreferences (clés) :
 | `mybudget.session` | session d'authentification (jetons + utilisateur) |
 | `onboarding_seen` | onboarding déjà vu (booléen) |
 | `theme_dark`, `budget_alerts` | préférences locales |
+| `currency_code`, `usd_rate_per_xof`, `usd_rate_updated_at` | devise active + cache du taux USD (conversion à l'affichage uniquement) |
 | `cache_wallet` | portefeuille (solde, épargne) |
 | `cache_dashboard_<id>` | tableau de bord par portefeuille |
 | `cache_budgets_<id>` | budgets |
@@ -62,7 +63,8 @@ Debounce 400 ms sur les changements de connectivité. La resynchronisation se d�
 
 - **Supprimer son compte** (exige réseau ; l'UI bloque avec un message clair).
 - **Restauration d'une période archivée** et **annulation 10 s serveur** (routes dédiées, en ligne uniquement).
-- Export CSV (API). L'export **PDF** des transactions est généré localement mais pagine toutes les transactions via l'API (`all=1`) : en pratique, il faut du réseau pour l'historique complet.
+- **Supprimer tout** (`POST /me/reset`, transaction atomique serveur) : hors-ligne, refusé avec « Connexion requise pour tout supprimer ».
+- Export CSV (API). L'export **PDF** des transactions est paginé via l'API (`all=1`) — mais **fonctionne aussi hors ligne** : en cas d'échec réseau, le cache local complet des opérations est utilisé pour générer le PDF.
 
 ## Séquence de synchronisation
 
@@ -104,8 +106,8 @@ sequenceDiagram
 
 ## Reset hors-ligne
 
-- **La réinitialisation exige le réseau** (`POST /me/reset`, atomique côté serveur) : hors-ligne, l'app refuse avec « Connexion requise pour réinitialiser ».
-- **Après succès** : cache local et file vidés entièrement ; aucune opération en attente n'existe pour ressusciter des données.
+- **La réinitialisation exige le réseau** (`POST /me/reset`, atomique côté serveur) : hors-ligne, l'app refuse avec « Connexion requise pour tout supprimer ».
+- **Après succès** : cache local et file vidés entièrement ; la devise est remise sur XOF ; aucune opération en attente n'existe pour ressusciter des données.
 - **Autres appareils** : au prochain contact avec le serveur (`/auth/me`), la différence de `data_epoch` déclenche l'effacement local et un rechargement complet.
 - L'ancienne remise à zéro hors-ligne (coupure locale + rejoue `reset_all`) a été retirée : une seule logique de reset.
 - Annulation 10 s : uniquement via l'API (`POST /wallets/:id/period/:periodId/undo`) pour les périodes, pas pour la réinitialisation complète (définitive par conception).

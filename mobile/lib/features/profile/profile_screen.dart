@@ -6,16 +6,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../providers/app_prefs_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/currency_provider.dart';
 import '../../providers/profile_photo_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/cache_service.dart';
 import '../../services/outbox.dart';
 import '../../services/budget_alerts_service.dart';
 import '../../services/transaction_pdf_export_service.dart';
+import 'currency_sheet.dart';
 import '../reset/reset_flow.dart';
 /// Profil (maquette « MyBudget ») : compte, portefeuille, préférences,
 /// export PDF, déconnexion.
@@ -37,22 +42,67 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final path = await TransactionPdfExportService.export(
         walletId: wallet.id,
         walletName: wallet.name,
-        initialAmount: wallet.initialAmount,
         displayName: ref.read(authControllerProvider).value?.user.displayName,
       );
       await CacheService.instance.shareFile(path);
+      if (!mounted) return;
+      await showSuccessDialog(
+        context,
+        title: 'Export PDF généré !',
+        message: 'Votre relevé des opérations a été généré avec succès.',
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Export PDF impossible. Vérifie ta connexion puis réessaie.')),
-        );
+        showErrorSnackBar(context, 'Export PDF impossible. Vérifie ta connexion puis réessaie.');
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
   }
 
+  void _showCurrencyPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const CurrencySheet(),
+    );
+  }
+
+  Future<void> _contactSupport() async {
+    // Le numéro n'apparaît nulle part dans l'UI : uniquement dans les constantes.
+    try {
+      final launched = await launchUrl(
+        AppConstants.whatsappContactUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) _snack('Impossible d’ouvrir WhatsApp');
+    } catch (_) {
+      if (mounted) _snack('Impossible d’ouvrir WhatsApp');
+    }
+  }
+
+  void _snack(String message) {
+    showErrorSnackBar(context, message);
+  }
+
   Future<void> _resetAll() => showResetAllFlow(context, ref);
+
+  /// Sous-titre de la ligne Devise : devise active + date de mise à jour
+  /// du taux USD lorsque l'USD est choisie.
+  String _currencySubtitle(CurrencyState state) {
+    final base = switch (state.code) {
+      'EUR' => 'Euro (EUR) — 1 EUR = 655,957 XOF',
+      'USD' => 'Dollar américain (USD)',
+      _ => 'Franc CFA — FCFA (XOF)',
+    };
+    if (state.code != 'USD') return base;
+    final at = state.usdUpdatedAt;
+    if (at == null) return '$base — taux de secours (hors ligne)';
+    final date = '${at.day.toString().padLeft(2, '0')}/${at.month.toString().padLeft(2, '0')}/${at.year}';
+    return state.usdIsFallback
+        ? '$base — taux de secours du $date'
+        : '$base — taux du $date';
+  }
 
   /// Interrupteur « Alertes de budget » : à l'activation, demande la permission
   /// POST_NOTIFICATIONS (Android 13+). En cas de refus, l'interrupteur reste coupé.
@@ -61,11 +111,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final granted = await BudgetAlertsService.instance.requestPermission();
       if (!mounted) return;
       if (!granted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notifications refusées. Autorise-les dans les réglages Android pour recevoir les alertes de budget.'),
-          ),
-        );
+        showWarningSnackBar(context, 'Notifications refusées. Autorise-les dans les réglages Android pour recevoir les alertes de budget.');
         return;
       }
     }
@@ -79,23 +125,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         final status = await Permission.camera.request();
         if (!status.isGranted) {
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Caméra non autorisée. Autorise-la dans les réglages Android.')),
-          );
+          showErrorSnackBar(context, 'Caméra non autorisée. Autorise-la dans les réglages Android.');
           return;
         }
       }
       await ref.read(profilePhotoProvider.notifier).setFromPick(source);
+      if (context.mounted) {
+        await showSuccessDialog(
+          context,
+          title: 'Photo enregistrée !',
+          message: 'Votre photo de profil a été mise à jour.',
+          duration: const Duration(milliseconds: 1200),
+        );
+      }
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Photo impossible. Vérifie les autorisations de la galerie/caméra.')),
-      );
+      showErrorSnackBar(context, 'Photo impossible. Vérifie les autorisations de la galerie/caméra.');
     }
   }
 
   Future<void> _removePhoto() async {
     await ref.read(profilePhotoProvider.notifier).clear();
+    if (mounted) {
+      await showSuccessDialog(
+        context,
+        title: 'Photo retirée !',
+        message: 'Votre photo de profil a été retirée.',
+        duration: const Duration(milliseconds: 1200),
+      );
+    }
   }
 
   Future<void> _showPhotoOptions() async {
@@ -144,6 +202,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider).value?.user;
     final wallet = ref.watch(walletControllerProvider).value;
+    final currency = ref.watch(currencyControllerProvider);
     final isDark = (ref.watch(themeControllerProvider).value ?? ThemeMode.light) == ThemeMode.dark;
     final alerts = ref.watch(alertsEnabledProvider).value ?? true;
     final photoPath = ref.watch(profilePhotoProvider).value;
@@ -287,7 +346,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Solde : ${formatXof(wallet.balance)}',
+                          'Solde : ${formatMoneyCurrent(wallet.balance)}',
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],
@@ -301,7 +360,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        'Épargne ${formatXof(wallet.savingsAmount, withCurrency: false)}',
+                        'Épargne ${formatMoneyCurrent(wallet.savingsAmount, withCurrency: false)}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
@@ -337,11 +396,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ListTile(
                 leading: Icon(Icons.payments_outlined, color: scheme.primary),
                 title: const _TileTitle('Devise'),
-                subtitle: const _TileSubtitle('FCFA (XOF)'),
-                trailing: Text(
-                  'XOF',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
-                ),
+                subtitle: _TileSubtitle(_currencySubtitle(currency)),
+                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                onTap: _showCurrencyPicker,
               ),
             ],
           ),
@@ -366,7 +423,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 subtitle: _TileSubtitle(
                   wallet == null
                       ? 'Crée d’abord ton budget'
-                      : 'Mise de côté : ${formatXof(wallet.savingsAmount)}',
+                      : 'Mise de côté : ${formatMoneyCurrent(wallet.savingsAmount)}',
                 ),
                 enabled: wallet != null,
                 trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
@@ -402,10 +459,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
                 onTap: () => context.push('/help'),
               ),
+              Divider(height: 1, color: scheme.outline),
+              ListTile(
+                leading: Icon(Icons.policy_outlined, color: scheme.primary),
+                title: const _TileTitle('Politique de confidentialité'),
+                subtitle: const _TileSubtitle('Données collectées, stockage et vos droits'),
+                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                onTap: () => context.push('/privacy-policy'),
+              ),
+              Divider(height: 1, color: scheme.outline),
+              ListTile(
+                leading: Icon(Icons.chat_outlined, color: scheme.primary),
+                title: const _TileTitle('Nous contacter'),
+                subtitle: const _TileSubtitle('Poser votre question via WhatsApp'),
+                trailing: Icon(Icons.open_in_new_rounded, color: scheme.onSurfaceVariant, size: 18),
+                onTap: _contactSupport,
+              ),
             ],
           ),
           const SizedBox(height: 22),
-          _sectionLabel(context, 'Réinitialisation'),
+          _sectionLabel(context, 'Zone de danger'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -414,14 +487,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               minimumSize: const Size.fromHeight(50),
             ),
             onPressed: _resetAll,
-            icon: const Icon(Icons.restart_alt, size: 18),
-            label: const Text('Réinitialiser tout'),
+            icon: const Icon(Icons.delete_forever_outlined, size: 18),
+            label: const Text('Supprimer tout'),
           ),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              'Toutes tes données seront supprimées définitivement (portefeuilles, opérations, budgets, épargne, objectifs et catégories personnalisées). Ton compte est conservé.',
+              'Toutes vos opérations, catégories personnalisées et préférences seront supprimées. Cette action est irréversible.',
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -510,11 +583,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final offline = results.every((r) => r == ConnectivityResult.none);
     if (offline) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Connectez-vous à internet pour supprimer votre compte.'),
-        ),
-      );
+      showWarningSnackBar(context, 'Connectez-vous à internet pour supprimer votre compte.');
       return;
     }
     if (!mounted) return;    final confirmed = await showDialog<bool>(
@@ -540,12 +609,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (confirmed == true) {
       try {
         await ref.read(authControllerProvider.notifier).deleteAccount();
+        if (!mounted) return;
+        await showSuccessDialog(
+          context,
+          title: 'Compte supprimé !',
+          message: 'Votre compte et vos données ont été supprimés avec succès.',
+        );
         if (mounted) context.go('/login');
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AuthController.messageFrom(e))),
-        );
+        showErrorSnackBar(context, AuthController.messageFrom(e));
       }
     }
   }

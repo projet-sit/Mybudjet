@@ -20,7 +20,7 @@
 | Numéro de téléphone (ou e-mail historique) | oui | +229 00 00 00 00 |
 | Nom d'affichage | oui | « Awa » |
 | Mot de passe (hashé bcrypt, jamais en clair) | oui | — |
-| Portefeuilles, montants (FCFA), dates, catégories, modes de paiement | oui | 155 000 FCFA, 14/11/2026, Alimentation |
+| Portefeuilles, montants (stockés en XOF), dates, catégories, modes de paiement | oui | 155 000 FCFA, 14/11/2026, Alimentation |
 | Budgets, périodes (archives), objectifs d'épargne | oui | Budget Alimentation : 80 000 FCFA |
 | Logs techniques serveur (route, statut, durée, IP via proxy) | oui | — |
 | Rapports de plantage (message tronqué, écran, version) | optionnel | — |
@@ -59,15 +59,16 @@ Pas de Firebase, pas de SDK pub/mesure, pas de cookies, pas de traceur tiers.
 
 ## Vos droits
 
-- **Accès** : profil → écran complet de votre compte ; export PDF/CSV depuis Profil → « Exporter ».
+- **Accès** : profil → écran complet de votre compte ; export PDF/CSV depuis Profil → « Exporter » (l'export PDF utilise la devise active, nom `operations_AAAA-MM-JJ.pdf`).
 - **Rectification** : modification du nom/prénom et des montants initiaux dans l'app (historisés).
-- **Suppression** : Profil → « Supprimer mes données » ; effacement définitif et immédiat.
+- **Suppression** : deux niveaux, au choix —
+  - Profil → Zone de danger → **Supprimer tout** : efface vos opérations, catégories personnalisées et préférences (la devise est remise sur FCFA) et l'historique, sans supprimer le compte ;
+  - Profil → **Supprimer mes données** : efface aussi le compte, définitivement.
 - **Portabilité** : export CSV (API) ou PDF (app) réutilisables dans un tableur.
-- **Réinitialisation** : la période en cours peut être remise à zéro à tout moment (l'historique archivé reste disponible).
 
 ## Contact
 
-[À REMPLIR] — e-mail de contact du responsable du traitement.
+Le responsable du traitement est joignable depuis l'application : Profil → **Nous contacter** (ouvre WhatsApp). Aucune adresse publique n'est publiée.
 
 ## État de ce document
 

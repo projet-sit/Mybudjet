@@ -1,6 +1,6 @@
 # MYBUDGET
 
-Application mobile de gestion de budget personnel (FCFA, entiers uniquement — jamais de flottants).
+Application mobile de gestion de budget personnel (FCFA/XOF par défaut — conversion à l'affichage en € ou $ ; jamais de flottants en base).
 Mobile en **Flutter** (`mobile/`), backend **Node.js / Express + PostgreSQL** (`backend/`), hébergé sur **Render**.
 Authentification **JWT maison** (access 1 h, refresh 30 j, hashé SHA-256 en base). **Pas de Firebase** : l'architecture initiale Firebase a été abandonnée en novembre 2026 (voir `docs/PHASE1_ARCHITECTURE.md`).
 Règle d'or : `solde = montant initial + Σ revenus − Σ dépenses`, recalculé par le backend dans des transactions SQL avec verrou `FOR UPDATE`.
@@ -22,7 +22,7 @@ Règle d'or : `solde = montant initial + Σ revenus − Σ dépenses`, recalcul�
 - [Sécurité](#sécurité)
 - [Contact](#contact)
 
-**Résumé en 3 lignes** : MyBudget aide à suivre dépenses et revenus en FCFA, à gérer son épargne et ses budgets par catégorie, avec un mode hors-ligne complet. Le backend est une API Express + PostgreSQL auto-hébergée sur Render ; l'app mobile Flutter s'y connecte en HTTPS. Tout fonctionne sans Firebase ni aucun service externe payant.
+**Résumé en 3 lignes** : MyBudget aide à suivre dépenses et revenus en FCFA (ou en euros/dollars, convertis), à gérer son épargne et ses budgets par catégorie, avec un mode hors-ligne complet. Le backend est une API Express + PostgreSQL hébergée sur Render ; l'app mobile Flutter s'y connecte en HTTPS. Tout fonctionne sans Firebase ni aucun service externe payant.
 
 ## Ce que fait l'app
 
@@ -34,7 +34,7 @@ Règle d'or : `solde = montant initial + Σ revenus − Σ dépenses`, recalcul�
 - Statistiques par période, archives de périodes mensuelles (API)
 - Hors-ligne : les écritures partent en file d'attente et se rejouent au retour du réseau (anti-doublons par id client, fusion des catégories à la synchro)
 - Réinitialisation complète du compte (« comme neuf ») : tout est supprimé définitivement, le compte est conservé
-- Export PDF des transactions (l'export CSV est disponible côté API : `GET /api/v1/wallets/:id/export`)
+- Export PDF des transactions (nom `operations_AAAA-MM-JJ.pdf`, devise active ; l'export CSV est disponible côté API : `GET /api/v1/wallets/:id/export`)
 - Aide et FAQ intégrée (Profil → Aide et FAQ), fonctionne hors-ligne
 
 ## Prérequis
@@ -164,7 +164,7 @@ Endpoints principaux (tous préfixés `/api/v1`, authentification `Authorization
 | `GET /wallets/:id/period` `POST /wallets/:id/period/next` `POST .../period/:periodId/undo` | Périodes mensuelles + annulation 10 s |
 | `GET /wallets/:id/periods` `POST /wallets/:id/periods/:periodId/restore` | Archives de périodes |
 | `POST /wallets/:id/reset` | Remise à zéro avec archivage (API legacy) |
-| `POST /me/reset` | Réinitialisation complète (compte « comme neuf ») |
+| `POST /me/reset` | Supprimer tout — réinitialisation complète (compte « comme neuf », Zone de danger) |
 | `GET/POST/PATCH/DELETE /wallets/:id/goals` + `contribute` `withdraw` | Objectifs d'épargne |
 | `GET /wallets/:id/export` | Export CSV complet |
 | `POST /client-errors` | Remontée de plantages mobiles (anonyme, fire-and-forget) |
@@ -282,11 +282,11 @@ Le backend est hébergé sur **Render** (plan gratuit) via `render.yaml` à la r
 
 - Aucun secret dans le dépôt : `.env`, `key.properties`, `mybudget.jks`, `keystore-backup/` sont ignorés par git.
 - Mots de passe hashés bcrypt ; refresh tokens hashés SHA-256 ; révocation globale à chaque changement de mot de passe.
-- Isolation stricte par utilisateur côté serveur (chaque requête joint le `user_id` du JWT) ; les montants sont des entiers FCFA avec contraintes `CHECK` en base.
+- Isolation stricte par utilisateur côté serveur (chaque requête joint le `user_id` du JWT) ; les montants sont des entiers stockés en XOF avec contraintes `CHECK` en base.
 - Voir [`docs/securite-et-confidentialite.md`](docs/securite-et-confidentialite.md).
 
 ## Contact
 
 [À REMPLIR] — e-mail de contact du mainteneur.
 
-*MyBudget — l'argent, clair et simple. Montants en FCFA, entiers uniquement.*
+*MyBudget — l'argent, clair et simple. Montants stockés en XOF entiers, convertis à l'affichage.*

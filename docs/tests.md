@@ -12,7 +12,7 @@
 
 ## Résumé
 
-Mobile : 82 tests passent (`flutter test`) dont redirections, overflow 360×640, outbox, recherche, PDF, FAQ, réinitialisation, alertes. Backend : 9 unitaires + 10 e2e (pg-mem) + 1 test d'atomicité sur vraie PostgreSQL (`test:rollback`). En complément : recette manuelle guidée sur un vrai téléphone.
+Mobile : 88 tests passent (`flutter test`) dont redirections, overflow 360×640, outbox, recherche (dont régression isolate/compute), PDF, FAQ, « Supprimer tout », alertes. Backend : 9 unitaires + 10 e2e (pg-mem) + 1 test d'atomicité sur vraie PostgreSQL (`test:rollback`). En complément : recette manuelle guidée sur un vrai téléphone.
 
 ## Tests mobile (Flutter)
 
@@ -22,14 +22,14 @@ Commande : `cd mobile && flutter test` (et `flutter analyze` pour l'analyse stat
 |---|---|
 | `test/onboarding_test.dart` | 18 tests : `appRedirect` (toutes les règles), écrans d'onboarding, flux Passer→Inscription, **overflow 360×640** (+ 320×568, paysage, tablette) |
 | `test/outbox_test.dart` | 13 tests : envoi, ordre, rollback 4xx, catégories hors-ligne (création, fusion 409, rollback, remapping d'id serveur), `clearAll` |
-| `test/search_test.dart` | 17 tests : recherche insensible accents, montants, dates, surlignage, catégories personnalisées |
+| `test/search_test.dart` | 18 tests : recherche insensible accents, montants, dates, surlignage, catégories personnalisées, chemin `compute` (régression isolate/locale) |
 | `test/widget_test.dart` | 6 tests : tuile de transaction (couleurs, signes), formatage |
 | `test/sync_state_test.dart` | 3 tests : libellés de synchro |
 | `test/auth_session_test.dart` | 4 tests : parsing session/jetons |
 | `test/pdf_export_test.dart` | 2 tests : PDF généré valide |
 | `test/api_connection_test.dart` | 2 tests réseau **skippés par défaut** (`--dart-define=RUN_API_TESTS=true`) |
 | `test/help_test.dart` | 3 tests : écran « Aide et FAQ » (liste, ouverture/fermeture, aucun overflow 360×640) |
-| `test/reset_screen_test.dart` | 3 tests : « Réinitialiser tout » (bouton désactivé tant que « REINITIALISER » n'est pas exact, overflow 360×640) |
+| `test/delete_all_flow_test.dart` | 6 tests : dialogue « Supprimer tout » (3 options, annulation, appel PDF), confirmation finale (texte exact, 360×640) |
 | `test/budget_alerts_test.dart` | 7 tests : évaluation des seuils 80 % / 100 %, déduplication par seuil et par période, interrupteur éteint |
 | `test/category_names_test.dart` | 8 tests : normalisation/validation des noms, ordre d'affichage |
 
@@ -78,11 +78,13 @@ Couvre : health, inscription 201/409/400, **concurrence de 2 dépenses parallèl
 4. **Épargne** : verser, retirer, tout récupérer ; vérifier que les stats excluent l'épargne.
 5. **Catégorie personnalisée** : saisir une dépense avec « Autres » → taper « Coiffure » + Valider → vérifier qu'elle apparaît, qu'elle se réutilise, qu'on la retrouve dans Recherche et dans Mes catégories ; essayer un doublon (casse/accents) → l'existante est sélectionnée.
 6. **Mode avion** : saisir 3 opérations hors-ligne, dont une catégorie personnalisée → réactiver le réseau → vérifier la synchronisation, l'ordre, et l'absence de doublon de catégorie.
-7. **Réinitialiser tout** : après la réinitialisation, vérifier que le compte est vide, que le mot de passe fonctionne toujours, et qu'aucun retour en arrière ne ressuscite une opération ; sur un 2ᵉ téléphone même compte, vérifier l'effacement local.
-8. **Déconnexion / reconnexion** : restauration de session ; suppression de compte (dernier recours).
-9. **Réveil serveur** : premier appel après 15 min d'inactivité (<60 s attendu).
-10. **FAQ** : Profil → Aide et FAQ, chaque accordéon s'ouvre sans overflow (360×640).
-11. **APK** : installer l'APK `direct` sur un Android 13+ d'entrée de gamme (Tecno/Infinix) + vérifier la permission notifications à la première activation des alertes.
+7. **Supprimer tout** : après la réinitialisation depuis la Zone de danger, vérifier que le compte est vide, que le mot de passe fonctionne toujours, que la devise est revenue à FCFA, et qu'aucun retour en arrière ne ressuscite une opération ; sur un 2ᵉ téléphone même compte, vérifier l'effacement local.
+8. **Devise** : basculer en EUR puis en USD → vérifier que les opérations passées, le solde, les budgets et les stats sont convertis ; vérifier le format (« 38,11 € » / « 41.20 $ »), le taux USD (date de mise à jour), puis revenir en FCFA.
+9. **Supprimer tout** : Profil → Zone de danger → Supprimer tout : le dialogue PDF fonctionne (partage), « Supprimer sans télécharger » enchaîne sur la confirmation finale ; après réinitialisation, le compte est vide, le mot de passe fonctionne toujours, et la devise est revenue à FCFA ; sur un 2ᵉ téléphone même compte, vérifier l'effacement local.
+10. **Déconnexion / reconnexion** : restauration de session ; suppression de compte (dernier recours).
+11. **Réveil serveur** : premier appel après 15 min d'inactivité (<60 s attendu).
+12. **FAQ** : Profil → Aide et FAQ, chaque accordéon s'ouvre sans overflow (360×640).
+13. **APK** : installer l'APK `direct` sur un Android 13+ d'entrée de gamme (Tecno/Infinix) + vérifier la permission notifications à la première activation des alertes.
 
 ## Ce que les tests ne couvrent pas
 

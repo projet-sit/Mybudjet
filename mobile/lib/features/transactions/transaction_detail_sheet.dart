@@ -9,6 +9,7 @@ import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/data_repository.dart';
 import '../../widgets/transaction_tile.dart';
+import '../../core/widgets/app_feedback.dart';
 import 'quick_add_sheet.dart';
 
 /// Détail d'une opération (maquette) : montant, infos, Modifier / Supprimer.
@@ -25,7 +26,7 @@ class TransactionDetailSheet extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer cette opération ?'),
         content: Text(
-          '${transaction.category} — ${formatXof(transaction.amount)}. Cette action est définitive.',
+          '${transaction.category} — ${formatMoneyCurrent(transaction.amount)}. Cette action est définitive.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
@@ -38,15 +39,20 @@ class TransactionDetailSheet extends ConsumerWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     try {
       await TransactionRepository.instance.delete(wallet.id, transaction.id);
       await ref.read(transactionsProvider.notifier).refreshAll();
-      navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text('Opération supprimée')));
+      if (!context.mounted) return;
+      // La boîte de succès s'affiche AU-DESSUS de la fiche, puis on ferme la fiche.
+      await showSuccessDialog(
+        context,
+        title: 'Opération supprimée !',
+        message: 'Votre opération a été supprimée avec succès.',
+      );
+      if (context.mounted) Navigator.of(context).pop();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(TransactionsController.messageFrom(e))));
+      if (!context.mounted) return;
+      showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }
 
@@ -95,7 +101,7 @@ class TransactionDetailSheet extends ConsumerWidget {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              '$sign${formatXof(transaction.amount)}',
+              '$sign${formatMoneyCurrent(transaction.amount)}',
               style: TextStyle(
                 fontSize: 30,
                 fontWeight: FontWeight.w900,

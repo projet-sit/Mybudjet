@@ -19,7 +19,7 @@ Toute la documentation du projet vit ici. Les fichiers `.md` sont la source ; le
 | [`../README.md`](../README.md) | Présentation, installation, lancement, build, dépannage |
 | [`architecture.md`](architecture.md) | Couches mobile/backend, Riverpod, go_router, flux « ajouter une dépense » |
 | [`modele-de-donnees.md`](modele-de-donnees.md) | Schéma PostgreSQL réel (tables, index, triggers, snapshots) |
-| [`regles-metier.md`](regles-metier.md) | Solde, Reste, épargne, budgets 50/80/100 %, périodes, dates, FCFA |
+| [`regles-metier.md`](regles-metier.md) | Solde, Reste, épargne, budgets 50/80/100 %, périodes, dates, devises (XOF/EUR/USD) |
 | [`hors-ligne-et-synchronisation.md`](hors-ligne-et-synchronisation.md) | Persistance locale, outbox, indicateur de synchro, règles anti-erreur |
 | [`detection-notifications.md`](detection-notifications.md) | Détection par notifications : **non implémentée** (état réel) |
 | [`securite-et-confidentialite.md`](securite-et-confidentialite.md) | Auth, isolation, données collectées, suppression de compte |

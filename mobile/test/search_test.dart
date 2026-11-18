@@ -168,4 +168,17 @@ void main() {
       expect(searchTransactions(list, 'coif'), hasLength(1));
     });
   });
+
+  group('searchFullLedger (isolate compute)', () {
+    test('le chemin compute trouve par catégorie (régression: locale non initialisée)', () async {
+      final list = [
+        _tx(id: '1', category: 'Alimentation'),
+        _tx(id: '2', type: 'income', category: 'Salaire', amount: 300000),
+      ];
+      expect((await searchFullLedger(list, 'alimentation')).map((t) => t.id), ['1']);
+      expect((await searchFullLedger(list, 'SALAIRE')).map((t) => t.id), ['2']);
+      expect((await searchFullLedger(list, '300 000')).map((t) => t.id), ['2']);
+      expect(await searchFullLedger(list, 'xyzintrouvable'), isEmpty);
+    });
+  });
 }

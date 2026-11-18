@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>MyBudget — Guide d'utilisation (1 page)</title>
+<style>
+  *{ margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI', Arial, sans-serif; }
+  @page{ size:A4; margin:0; }
+  body{ color:#111; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; filter:grayscale(1); }
+  .page{ width:210mm; height:297mm; padding:10mm 11mm 16mm; position:relative; overflow:hidden; background:#fff; }
+
+  /* En-tête */
+  .hero{ background:#111; color:#fff; border-radius:12px; padding:13px 16px; display:flex; align-items:center; gap:12px; }
+  .hero h1{ font-size:22px; font-weight:800; letter-spacing:.2px; }
+  .hero h1 span{ font-weight:400; color:#ddd; }
+  .hero p{ font-size:10px; color:#ddd; margin-top:3px; }
+  .hero .badge{ margin-left:auto; text-align:right; font-size:7.4px; color:#bbb; line-height:1.6; }
+  .hero .badge b{ display:block; color:#fff; font-size:9px; }
+
+  /* Sections */
+  h2{ font-size:12.5px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; border-bottom:2px solid #111; padding-bottom:3px; margin:15px 0 7px; display:flex; align-items:baseline; gap:8px; }
+  h2 small{ font-weight:600; text-transform:none; letter-spacing:0; color:#555; font-size:8.4px; }
+
+  /* Deux colonnes */
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+  ol.steps{ list-style:none; counter-reset:s; }
+  ol.steps li{ counter-increment:s; position:relative; padding-left:20px; font-size:10px; line-height:1.45; margin-bottom:5px; }
+  ol.steps li::before{ content:counter(s); position:absolute; left:0; top:-1px; width:15px;height:15px; border:1.5px solid #111; border-radius:50%; font-size:8px; font-weight:800; display:flex;align-items:center;justify-content:center; background:#fff; }
+
+  .card{ border:1px solid #cfcfcf; border-radius:9px; padding:9px 11px; background:#fafafa; }
+
+  ul.tight{ padding-left:16px; }
+  ul.tight li{ font-size:9.6px; line-height:1.52; margin-bottom:4px; }
+
+  table.grid{ width:100%; border-collapse:collapse; font-size:9.6px; }
+  table.grid th, table.grid td{ border:1px solid #d4d4d4; padding:6px 9px; text-align:left; line-height:1.45; vertical-align:top; }
+  table.grid th{ background:#ececec; font-size:8.3px; text-transform:uppercase; letter-spacing:.3px; }
+
+  .note{ border-left:3.5px solid #111; background:#f0f0f0; border-radius:6px; padding:8px 10px; font-size:8.6px; line-height:1.55; margin-top:9px; }
+
+  .foot{ position:absolute; bottom:6mm; left:11mm; right:11mm; border-top:1px solid #d4d4d4; padding-top:5px; display:flex; justify-content:space-between; font-size:7.3px; color:#555; }
+  .foot b{ color:#000; }
+</style>
+</head>
+<body>
+<section class="page">
+
+  <header class="hero">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H5a2 2 0 0 1 0-4h13v4"/><path d="M4 5v14a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1"/><circle cx="16.5" cy="14.5" r=".5" fill="#fff"/></svg>
+    <div>
+      <h1>MyBudget <span>— Guide d'utilisation</span></h1>
+      <p>Votre argent en FCFA, en € ou en $ — simplement. Comprenez chaque écran en un coup d'œil.</p>
+    </div>
+    <div class="badge"><b>Version 1.2.0</b>Android · APK<br>FCFA entiers · XOF en base</div>
+  </header>
+
+  <!-- 1. Accueil -->
+  <h2>1 · L'accueil en un coup d'œil <small>— votre tableau de bord</small></h2>
+  <table class="grid">
+    <tr><th>Ce que vous voyez</th><th>Ce que ça vous dit</th></tr>
+    <tr><td><b>Reste</b> (grand chiffre)</td><td>Ce qu'il vous reste à dépenser, librement. C'est le chiffre à regarder en premier.</td></tr>
+    <tr><td><b>Revenus / Dépenses</b></td><td>Le total de ce que vous avez gagné et dépensé depuis le début du mois.</td></tr>
+    <tr><td><b>Budget du mois</b></td><td>Où vous en êtes de vos dépenses du mois : la barre se remplit au fil de vos achats et le badge « Encore X FCFA » vous dit ce qu'il vous reste. La couleur vire à l'alerte quand vous approchez de la limite.</td></tr>
+    <tr><td>Boutons <b>Stats</b> et <b>Export</b></td><td><b>Stats</b> : le détail de vos habitudes sur la semaine, le mois ou l'année · <b>Export</b> : un PDF de tout votre historique à garder ou partager.</td></tr>
+    <tr><td><b>Mon épargne</b></td><td>Votre cagnotte : l'argent mis de côté, en sécurité, hors de l'argent du quotidien. Touchez la carte pour la gérer.</td></tr>
+    <tr><td><b>Dernières opérations</b></td><td>Vos 3 dernières écritures — un rappel rapide. <b>Tout voir</b> ouvre l'onglet Opérations.</td></tr>
+  </table>
+
+  <!-- 2. Ajouter une opération -->
+  <h2>2 · Ajouter une opération <small>— bouton + au centre de l'écran</small></h2>
+  <div class="card">
+    <ol class="steps">
+      <li>Touchez le gros bouton <b>+</b> en bas, au centre.</li>
+      <li>Dites si c'est une <b>Dépense</b> ou un <b>Revenu</b>.</li>
+      <li>Tapez le <b>montant</b> avec le pavé de l'écran — en FCFA (entiers, touche <b>000</b>) ou en € / $ (2 décimales). La devise se choisit dans <b>Profil → Devise</b> (FCFA par défaut).</li>
+      <li>Touchez la <b>catégorie</b> qui correspond : Alimentation, Transport, Logement… pour les dépenses ; Salaire, Business, Cadeau… pour les revenus. « <b>Autres</b> » permet d'écrire votre propre catégorie (obligatoire, 2 à 30 caractères, première lettre en majuscule) ; elle est réutilisée ensuite.</li>
+      <li>Touchez <b>Enregistrer</b>. C'est tout : votre « Reste » et les totaux s'actualisent immédiatement.</li>
+    </ol>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h2>3 · Les 4 onglets du bas <small>— tout est accessible ici</small></h2>
+      <ul class="tight">
+        <li><b>Accueil</b> — votre tableau de bord (§1). Tirez l'écran vers le bas pour actualiser.</li>
+        <li><b>Opérations</b> — tout votre historique, jour par jour. La <b>loupe</b> filtre en temps réel (~300 ms) : un mot de la note, une catégorie, un montant, une date ou un type. « <b>Aucune opération trouvée</b> » si rien ne correspond. Filtrez par <b>Tout / Dépenses / Revenus / Épargne</b>. <b>Glissez</b> une ligne vers la gauche pour la supprimer (<b>Annuler</b> proposé). Touchez une opération pour la <b>modifier</b> ou la <b>supprimer</b>.</li>
+        <li><b>Budgets</b> — fixez une <b>limite par catégorie</b> (« + » en haut) : la barre se remplit au fil des dépenses et MyBudget vous <b>alerte à 50 %, 80 % et 100 %</b>. Les boutons <b>−5 000 / +5 000</b> ajustent la limite en un geste ; le menu <b>⋮</b> modifie ou supprime le budget.</li>
+        <li><b>Profil</b> — votre compte et vos réglages : <b>Mode sombre</b>, <b>Alertes de budget</b>, <b>Devise</b> (FCFA, €, $ — conversion automatique, stockage en XOF), accès à <b>Mon épargne</b>, <b>Exporter mes transactions</b> (PDF, `operations_AAAA-MM-JJ.pdf`), <b>Politique de confidentialité</b>, <b>Nous contacter</b>, <b>Se déconnecter</b>, <b>Supprimer mes données</b> et <b>Zone de danger → Supprimer tout</b>.</li>
+      </ul>
+
+      <h2>4 · Épargne <small>— « Mon épargne »</small></h2>
+      <ul class="tight">
+        <li>Ouvrez la carte <b>Mon épargne</b> sur l'accueil (ou Profil → Mon épargne).</li>
+        <li>Indiquez le <b>montant que vous voulez mettre de côté</b> — raccourcis <b>5 000 / 10 000 / 25 000 / 50 000</b> pour aller vite.</li>
+        <li>Touchez <b>Enregistrer l'épargne</b>. Cet argent est mis à l'abri : il ne compte plus dans votre « Reste » dépensable, il reste bien à vous.</li>
+        <li><b>Tout épargner</b> : met tout de côté en un geste · <b>Tout récupérer</b> : remet toute la cagnotte dans votre budget (l'app demande confirmation).</li>
+      </ul>
+    </div>
+    <div>
+      <h2>5 · Statistiques <small>— bouton Stats sur l'accueil</small></h2>
+      <ul class="tight">
+        <li>Choisissez la période : <b>Semaine</b>, <b>Mois</b> ou <b>Année</b>.</li>
+        <li><b>Dépenses</b> et <b>Revenus</b> de la période, en deux cartes : vous savez tout de suite si vous avez gagné plus que vous n'avez dépensé.</li>
+        <li>La <b>moyenne par jour</b> vous donne votre rythme de dépense, et la tendance indique si vous dépensez plus ou moins que sur la période précédente.</li>
+        <li>Le graphique <b>Évolution</b> montre les jours (ou mois) où vous dépensez le plus ; le bloc <b>Par catégorie</b> révèle où part votre argent.</li>
+        <li>En bas, un rappel de votre <b>épargne totale</b>.</li>
+      </ul>
+
+      <div class="note"><b>Bon à savoir :</b> les montants sont stockés en <b>XOF</b> et convertis à l'affichage — FCFA <b>entiers</b> ; € / $ avec <b>2 décimales</b> (« 25 000 FCFA », « 38,11 € », « 41.20 $ ») · la <b>première ouverture</b> peut être un peu longue (le service se réveille) · une erreur de saisie ? Opérations → touchez l'opération → <b>Modifier</b> ou <b>Supprimer</b> · <b>mot de passe oublié</b> ? « Mot de passe oublié » sur l'écran de connexion (un code est envoyé à l'e-mail de votre compte — pensez à le renseigner à l'inscription) · <b>« Supprimer tout »</b> (Profil → Zone de danger) efface vos opérations, catégories personnalisées et préférences après deux confirmations — avec ou sans téléchargement PDF préalable.</div>
+
+      <div class="note" style="margin-top:8px; border-left-width:3.5px"><b>La règle d'or :</b> notez chaque dépense <b>au moment où elle arrive</b>, ne serait-ce qu'un chiffre. MyBudget s'occupe de tout le reste — plus besoin de calculette, plus d'argent qui « disparaît » sans explication.</div>
+    </div>
+  </div>
+
+  <footer class="foot"><span><b>MyBudget</b> · Guide d'utilisation · v1.2.0</span><span>Une question ? Profil → Nous contacter (WhatsApp).</span><span>Page 1 / 1</span></footer>
+</section>
+</body>
+</html>

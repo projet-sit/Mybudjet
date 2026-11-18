@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Régénère toute la documentation générée de MyBudget (diagrammes, site API, exports PDF/DOCX).
 
@@ -115,7 +115,8 @@ if (-not $SkipExports) {
   Step '  PDF : export/dossier-de-conception.pdf'
   Push-Location $docs
   try {
-    & npx md-to-pdf 'dossier-de-conception.md' --stylesheet 'pdf.css' --launch-options '{"args":["--no-sandbox","--disable-dev-shm-usage"]}' | Out-Null
+    # Chrome/Chromium via variable d'environnement (PUPPETEER_EXECUTABLE_PATH, défini plus haut).
+    & npx md-to-pdf 'dossier-de-conception.md' --stylesheet 'pdf.css' | Out-Null
     if (Test-Path (Join-Path $docs 'dossier-de-conception.pdf')) {
       Move-Item -Force (Join-Path $docs 'dossier-de-conception.pdf') (Join-Path $export 'dossier-de-conception.pdf')
       Ok 'PDF dossier généré'
@@ -125,7 +126,8 @@ if (-not $SkipExports) {
   Step '  PDF : export/guide-utilisateur.pdf'
   Push-Location (Join-Path $docs 'guide')
   try {
-    & npx md-to-pdf 'guide-utilisateur.md' --stylesheet '../pdf.css' --launch-options '{"args":["--no-sandbox","--disable-dev-shm-usage"]}' | Out-Null
+    # Chrome/Chromium via variable d'environnement (PUPPETEER_EXECUTABLE_PATH, défini plus haut).
+    & npx md-to-pdf 'guide-utilisateur.md' --stylesheet '../pdf.css' | Out-Null
     if (Test-Path 'guide-utilisateur.pdf') {
       Move-Item -Force 'guide-utilisateur.pdf' (Join-Path $export 'guide-utilisateur.pdf')
       Ok 'PDF guide généré'

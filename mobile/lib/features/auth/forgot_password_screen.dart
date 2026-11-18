@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../services/auth_repository.dart';
 
 /// Mot de passe oublié / réinitialisation.
@@ -21,7 +22,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool _obscure = true;
   int _step = 0; // 0 = demande, 1 = réinitialisation
   String? _error;
-  String? _info;
 
   @override
   void dispose() {
@@ -39,17 +39,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() {
       _loading = true;
       _error = null;
-      _info = null;
     });
     try {
       final token = await AuthRepository.instance.forgotPassword(
         email: _emailController.text.trim(),
       );
+      if (!mounted) return;
       setState(() {
         _step = 1;
         _tokenController.text = token; // Pré-rempli en développement.
-        _info = 'Code de réinitialisation envoyé. Suis les instructions.';
       });
+      await showSuccessDialog(
+        context,
+        title: 'Code envoyé !',
+        message: 'Votre demande a été prise en compte. Suivez les instructions.',
+      );
     } catch (e) {
       setState(() => _error = 'Impossible de demander une réinitialisation. Réessaie.');
     } finally {
@@ -69,7 +73,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() {
       _loading = true;
       _error = null;
-      _info = null;
     });
     try {
       await AuthRepository.instance.resetPassword(
@@ -77,9 +80,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mot de passe réinitialisé, connecte-toi')),
+      await showSuccessDialog(
+        context,
+        title: 'Mot de passe modifié !',
+        message: 'Votre mot de passe a été mis à jour. Connectez-vous.',
       );
+      if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       setState(() => _error = 'Lien de réinitialisation invalide ou expiré');
@@ -147,10 +153,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                 ),
               ],
-              if (_info != null) ...[
-                const SizedBox(height: 16),
-                Text(_info!, style: const TextStyle(color: AppColors.incomeGreen), textAlign: TextAlign.center),
-              ],
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 Text(_error!, style: const TextStyle(color: AppColors.expenseRed), textAlign: TextAlign.center),
@@ -173,3 +175,4 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 }
+

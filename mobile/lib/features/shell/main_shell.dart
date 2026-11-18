@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_feedback.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/shell_provider.dart';
 import '../budgets/budgets_screen.dart';
 import '../history/history_screen.dart';
@@ -11,8 +13,32 @@ import '../transactions/quick_add_sheet.dart';
 
 /// Coquille principale (maquette « MyBudget ») :
 /// Accueil · Opérations · [+ FAB] · Budgets · Profil.
-class MainShell extends ConsumerWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
+
+  @override
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> {
+  @override
+  void initState() {
+    super.initState();
+    // Une confirmation de bienvenue (connexion / création de compte) est
+    // affichée une seule fois, à l'arrivée sur l'accueil.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showAuthSuccessIfPending());
+  }
+
+  Future<void> _showAuthSuccessIfPending() async {
+    final notice = ref.read(authNoticeProvider);
+    if (notice == null || !mounted) return;
+    ref.read(authNoticeProvider.notifier).set(null);
+    final (title, message) = switch (notice) {
+      AuthNotice.login => ('Connexion réussie !', 'Bon retour ! Vous êtes connecté à votre compte.'),
+      AuthNotice.register => ('Compte créé !', 'Votre compte a été créé avec succès. Bienvenue sur MyBudget !'),
+    };
+    await showSuccessDialog(context, title: title, message: message);
+  }
 
   void _openQuickAdd(BuildContext context) {
     showModalBottomSheet<void>(
@@ -24,7 +50,7 @@ class MainShell extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final index = ref.watch(shellTabProvider);
     final scheme = Theme.of(context).colorScheme;
     final screens = const [HomeScreen(), HistoryScreen(), BudgetsScreen(), ProfileScreen()];

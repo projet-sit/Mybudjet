@@ -478,13 +478,18 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
     );
   }
 
-  Future<void> create({required String category, required int limitAmount, String? categoryId}) async {
+  /// Crée un budget. Renvoie true si l'opération a été mise en file hors-ligne
+  /// (aucune confirmation serveur — ne pas afficher de succès), false si le
+  /// backend l'a bien enregistrée.
+  Future<bool> create({required String category, required int limitAmount, String? categoryId}) async {
     final wallet = ref.watch(walletControllerProvider).value;
-    if (wallet == null) return;
+    if (wallet == null) return true;
+    var queued = false;
     try {
       await DataRepository.instance.createBudget(wallet.id, category: category, limitAmount: limitAmount, categoryId: categoryId);
     } on DioException catch (e) {
       if (!_isNetworkish(e)) rethrow;
+      queued = true;
       final localId = Outbox.instance.newLocalId();
       final cached = await CacheService.instance.loadBudgets(wallet.id);
       await _saveCache(wallet.id, [
@@ -501,11 +506,14 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
       await ref.read(syncInfoProvider.notifier).refresh();
     }
     await refresh();
+    return queued;
   }
 
-  Future<void> updateLimit(String budgetId, int limitAmount) async {
+  /// Modifie la limite. Renvoie true si la modification attend la synchronisation
+  /// (hors-ligne), false si le backend l'a bien enregistrée.
+  Future<bool> updateLimit(String budgetId, int limitAmount) async {
     final wallet = ref.watch(walletControllerProvider).value;
-    if (wallet == null) return;
+    if (wallet == null) return true;
     if (Outbox.instance.isLocalId(budgetId)) {
       // Budget pas encore synchronisé : patcher le cache + l'opération en attente.
       final cached = await CacheService.instance.loadBudgets(wallet.id);
@@ -521,12 +529,15 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
           .toList();
       await _saveCache(wallet.id, patched);
       await Outbox.instance.updatePendingUpsertAmount(budgetId, limitAmount);
-      return refresh();
+      await refresh();
+      return true;
     }
+    var queued = false;
     try {
       await DataRepository.instance.updateBudget(wallet.id, budgetId, limitAmount: limitAmount);
     } on DioException catch (e) {
       if (!_isNetworkish(e)) rethrow;
+      queued = true;
       final cached = await CacheService.instance.loadBudgets(wallet.id);
       final patched = cached
           .map((b) => b.id == budgetId
@@ -552,22 +563,27 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
       await ref.read(syncInfoProvider.notifier).refresh();
     }
     await refresh();
+    return queued;
   }
 
-  Future<void> remove(String budgetId) async {
+  /// Supprime un budget. Renvoie true si la suppression attend la synchronisation.
+  Future<bool> remove(String budgetId) async {
     final wallet = ref.watch(walletControllerProvider).value;
-    if (wallet == null) return;
+    if (wallet == null) return true;
     final cached = await CacheService.instance.loadBudgets(wallet.id);
     if (Outbox.instance.isLocalId(budgetId)) {
       // Jamais synchronisé : retirer la création de la file + du cache.
       await Outbox.instance.removePendingOp(budgetId);
       await _saveCache(wallet.id, cached.where((b) => b.id != budgetId).toList());
-      return refresh();
+      await refresh();
+      return true;
     }
+    var queued = false;
     try {
       await DataRepository.instance.deleteBudget(wallet.id, budgetId);
     } on DioException catch (e) {
       if (!_isNetworkish(e)) rethrow;
+      queued = true;
       await _saveCache(wallet.id, cached.where((b) => b.id != budgetId).toList());
       await Outbox.instance.enqueue(OutboxOp(
         id: budgetId,
@@ -579,6 +595,7 @@ class BudgetsController extends AsyncNotifier<List<Budget>> {
       await ref.read(syncInfoProvider.notifier).refresh();
     }
     await refresh();
+    return queued;
   }
 
   bool _isNetworkish(DioException e) {

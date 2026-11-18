@@ -42,6 +42,10 @@ Thumbs.db
 # Backups locaux
 .git-backups/
 
+# Symboles de déobfuscation (release) et sauvegardes d'APK — locaux, jamais sur GitHub
+debug-symbols/
+release-backup/
+
 # Skills tiers projet
 .agents/
 backend/.db-url.tmp

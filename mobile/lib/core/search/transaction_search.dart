@@ -1,8 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
 
 import '../../models/transaction.dart';
-import '../utils/date_format.dart';
 
 /// Recherche d'opérations sur TOUT l'historique local :
 /// index de texte normalisé (minuscules, sans accents), jamais limité
@@ -12,8 +10,10 @@ import '../utils/date_format.dart';
 /// (« 10000 », « 10 000 », « -10000 »), date (« 14/11 », « novembre »,
 /// « 14/11/2026 »), type (« dépense », « revenu », « épargne »).
 ///
-/// Le travail lourd (normalisation + balayage) est fait hors du thread UI
-/// via [searchFullLedger] (compute/Isolate).
+/// Le chemin de recherche ne dépend PAS d'intl/DateFormat : tout est formaté
+/// manuellement (noms de mois en dur, groupement des milliers fait main), ce
+/// qui permet de l'exécuter dans un isolate (compute) sans initialiser de
+/// données de locale — c'était la cause du chargement infini sur la recherche.
 
 const Map<String, String> _diacritics = {
   'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a', 'ã': 'a',
@@ -33,10 +33,32 @@ String normalizeSearchText(String input) {
 
 String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
+/// Groupement manuel des milliers (espace normal), ex : 10000 → « 10 000 ».
+/// Aucune dépendance à NumberFormat : utilisable dans un isolate sans locale.
 String _groupedAmount(int amount) {
-  final grouped = NumberFormat('#,##0', 'fr_FR').format(amount);
-  return grouped.replaceAll('\u202F', ' ').replaceAll('\u00A0', ' ');
+  final negative = amount < 0;
+  final digits = amount.abs().toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(' ');
+    buffer.write(digits[i]);
+  }
+  return negative ? '-$buffer' : buffer.toString();
 }
+
+/// « 14/11/2026 » en manuel (DateFormat exigerait la locale initialisée).
+String _formatDayManual(int year, int month, int day) =>
+    '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year';
+
+const _monthLongFr = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+];
+
+const _monthShortFr = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+];
 
 /// Type recherchable en français.
 String typeSearchLabel(String type) {
@@ -58,6 +80,9 @@ bool transactionMatches(Transaction tx, String rawQuery, {String? walletName}) {
   final q = normalizeSearchText(rawQuery);
   if (q.isEmpty) return true;
 
+  // Variantes de date : « 14/11 », « novembre », « novembre 2026 », « nov. »
+  final d = DateTime.tryParse(tx.date);
+
   final haystack = <String>[
     normalizeSearchText(tx.category),
     if (tx.description != null) normalizeSearchText(tx.description!),
@@ -66,17 +91,14 @@ bool transactionMatches(Transaction tx, String rawQuery, {String? walletName}) {
     typeSearchLabel(tx.type),
     '${tx.amount}',
     normalizeSearchText(_groupedAmount(tx.amount)),
-    normalizeSearchText(DateFormatUtil.formatDate(tx.date)),
+    if (d != null) _formatDayManual(d.year, d.month, d.day),
   ];
-
-  // Variantes de date : « 14/11 », « novembre », « novembre 2026 », "nov."
-  final d = DateTime.tryParse(tx.date);
   if (d != null) {
     haystack.add('${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}');
-    final monthLong = DateFormat('MMMM', 'fr_FR').format(d);
+    final monthLong = _monthLongFr[d.month - 1];
     haystack.add(normalizeSearchText(monthLong));
     haystack.add(normalizeSearchText('$monthLong ${d.year}'));
-    haystack.add(normalizeSearchText(DateFormat('MMM', 'fr_FR').format(d)));
+    haystack.add(normalizeSearchText(_monthShortFr[d.month - 1]));
   }
 
   final joined = haystack.join(' ');

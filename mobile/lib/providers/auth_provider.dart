@@ -14,6 +14,21 @@ import 'transaction_provider.dart';
 import 'sync_provider.dart';
 import 'wallet_provider.dart';
 
+/// Signal transitoire « auth fraîche » posé par register/login :
+/// MainShell affiche alors la boîte de confirmation « Compte créé ! » /
+/// « Connexion réussie ! » (une seule fois).
+enum AuthNotice { login, register }
+
+class AuthNoticeController extends Notifier<AuthNotice?> {
+  @override
+  AuthNotice? build() => null;
+
+  void set(AuthNotice? notice) => state = notice;
+}
+
+final authNoticeProvider =
+    NotifierProvider<AuthNoticeController, AuthNotice?>(AuthNoticeController.new);
+
 /// Session courante (null si non connecté).
 /// États exposés : chargement / session / échec (messages en français).
 class AuthController extends AsyncNotifier<AuthSession?> {
@@ -123,6 +138,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     });
     if (state.hasValue) {
       ref.invalidate(walletControllerProvider);
+      ref.read(authNoticeProvider.notifier).set(AuthNotice.register);
     }
   }
 
@@ -133,6 +149,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     });
     if (state.hasValue) {
       ref.invalidate(walletControllerProvider);
+      ref.read(authNoticeProvider.notifier).set(AuthNotice.login);
     }
   }
 

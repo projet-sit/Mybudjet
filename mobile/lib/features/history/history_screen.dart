@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/search/transaction_search.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/transaction.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -40,7 +41,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    showErrorSnackBar(context, message);
   }
 
   bool get _isSearching => _query.trim().isNotEmpty;
@@ -59,31 +60,39 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       await ref.read(transactionsProvider.notifier).refreshAll();
       if (mounted) setState(() => _hidden.remove(tx.id));
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Opération supprimée'),
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(label: 'Annuler', onPressed: () => _restore(tx)),
-        ),
+      if (!mounted) return;
+      await showSuccessDialog(
+        context,
+        title: 'Opération supprimée !',
+        message: 'Votre opération a été supprimée avec succès.',
+        actionLabel: 'Annuler',
+        onAction: () {
+          if (context.mounted) Navigator.of(context).pop();
+          _restore(tx);
+        },
       );
       if (_isSearching) await _runSearch();
     } catch (e) {
       if (mounted) setState(() => _hidden.remove(tx.id));
-      messenger.showSnackBar(SnackBar(content: Text(TransactionsController.messageFrom(e))));
+      if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }
 
   Future<void> _restore(Transaction tx) async {
     final wallet = ref.read(walletControllerProvider).value;
     if (wallet == null) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await TransactionRepository.instance.create(wallet.id, tx);
       await ref.read(transactionsProvider.notifier).refreshAll();
       if (_isSearching) await _runSearch();
-      messenger.showSnackBar(const SnackBar(content: Text('Opération restaurée')));
+      if (!mounted) return;
+      await showSuccessDialog(
+        context,
+        title: 'Opération restaurée !',
+        message: 'Votre opération a été restaurée avec succès.',
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(TransactionsController.messageFrom(e))));
+      if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
     }
   }
 
@@ -109,7 +118,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   void _onSearchChanged(String value) {
     _debounce?.cancel();
     setState(() => _query = value);
-    _debounce = Timer(const Duration(milliseconds: 250), _runSearch);
+    // ~300 ms : laisse l'utilisateur finir de taper avant de lancer la recherche.
+    _debounce = Timer(const Duration(milliseconds: 300), _runSearch);
   }
 
   Future<void> _runSearch() async {
@@ -124,30 +134,58 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       }
       return;
     }
-    final wallet = ref.read(walletControllerProvider).value;
-    if (wallet == null) return;
     if (mounted) setState(() => _searching = true);
-    var ledger = await CacheService.instance.loadTransactions(wallet.id);
-    ledger = await Outbox.instance.applyOverlay(ledger);
-    if (ledger.isEmpty) {
-      try {
-        ledger = await TransactionRepository.instance.fetchAll(wallet.id);
-      } catch (_) {
-        ledger = const [];
+    try {
+      final wallet = ref.read(walletControllerProvider).value;
+      if (wallet == null) {
+        if (mounted) {
+          setState(() {
+            _searchResults = const [];
+            _searching = false;
+          });
+        }
+        return;
       }
+      var ledger = await CacheService.instance.loadTransactions(wallet.id);
+      ledger = await Outbox.instance.applyOverlay(ledger);
+      if (ledger.isEmpty) {
+        try {
+          ledger = await TransactionRepository.instance.fetchAll(wallet.id);
+        } catch (_) {
+          ledger = const [];
+        }
+      }
+      List<Transaction> results;
+      try {
+        results = await searchFullLedger(
+          ledger,
+          q,
+          typeFilter: typeFilter,
+          walletName: wallet.name,
+        );
+      } catch (_) {
+        // Repli : recherche synchrone sur le thread UI (jamais bloquant).
+        results = searchTransactions(
+          ledger,
+          q,
+          typeFilter: typeFilter,
+          walletName: wallet.name,
+        );
+      }
+      final visible = results.where((t) => !_hidden.contains(t.id)).toList();
+      if (!mounted) return;
+      setState(() {
+        _searchResults = visible;
+        _searching = false;
+      });
+    } catch (_) {
+      // Jamais de chargement infini : en cas d'erreur, on affiche l'état vide.
+      if (!mounted) return;
+      setState(() {
+        _searchResults = const [];
+        _searching = false;
+      });
     }
-    final results = await searchFullLedger(
-      ledger,
-      q,
-      typeFilter: typeFilter,
-      walletName: wallet.name,
-    );
-    final visible = results.where((t) => !_hidden.contains(t.id)).toList();
-    if (!mounted) return;
-    setState(() {
-      _searchResults = visible;
-      _searching = false;
-    });
   }
 
   Future<void> _setFilter(String type) async {
@@ -263,7 +301,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   Widget _searchList(ColorScheme scheme) {
-    if (_searching) {
+    // Résultats pas encore calculés (recherche en cours ou debounce) : jamais
+    // l'état vide pour ne pas faire clignoter « Aucune opération trouvée ».
+    if (_searching || _searchResults == null) {
       return const Center(child: CircularProgressIndicator());
     }
     final results = _searchResults ?? const <Transaction>[];
@@ -384,7 +424,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   const Spacer(),
                   if (_hasCountableOps(entry.value))
                     Text(
-                      formatXof(
+                      formatMoneyCurrent(
                         entry.value.fold<int>(
                           0,
                           (sum, tx) => sum + (tx.isExpense ? -tx.amount : (tx.isIncome ? tx.amount : 0)),

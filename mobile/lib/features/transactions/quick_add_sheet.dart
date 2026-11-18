@@ -6,10 +6,13 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/category_names.dart';
 import '../../core/utils/money.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/categories.dart';
 import '../../models/category.dart';
 import '../../models/transaction.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/currency_provider.dart';
+import '../../services/currency_service.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -44,11 +47,19 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     final tx = widget.editing;
     if (tx != null) {
       _mode = tx.type == 'income' ? 'income' : 'expense';
-      _amount = '${tx.amount}';
+      _amount = _editableAmount(tx.amount);
       _category = tx.category;
       _categoryId = tx.categoryId;
       _noteController.text = tx.description ?? '';
     }
+  }
+
+  /// Montant (XOF en base) reconverti pour le champ de saisie dans la devise active.
+  String _editableAmount(int xof) {
+    final code = CurrencyService.instance.current;
+    if (code == 'XOF') return '$xof';
+    final value = CurrencyService.convertFromXof(xof, code);
+    return value.toStringAsFixed(2).replaceAll('.', ',');
   }
 
   @override
@@ -105,16 +116,20 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     }
   }
 
-  /// Valide le nom saisi dans le champ « Autres » : crée (ou retrouve) la
-  /// catégorie personnalisée, puis la sélectionne.
-  Future<void> _createCustomCategory() async {
-    final all = ref.read(_mode == 'expense' ? expenseCategoriesProvider : incomeCategoriesProvider);
+  /// Garantit que `_category`/`_categoryId` reflètent le champ « Autres » :
+  /// si l'utilisateur a tapé un nom sans appuyer sur « Valider », la catégorie
+  /// est créée (ou retrouvée) ici avant l'enregistrement.
+  /// Renvoie un message de succès, une chaîne vide si rien à faire, ou null
+  /// si le nom est invalide (l'enregistrement est alors abandonné).
+  Future<String?> _ensureCustomCategory() async {
+    if (!_addingCustom) return ''; // catégorie déjà sélectionnée : rien à faire
     final input = _customNameController.text;
     final check = validateCategoryName(input);
     if (!check.ok) {
-      _snack(check.error ?? 'Nom invalide');
-      return;
+      _snack(check.error ?? 'Nom de catégorie obligatoire');
+      return null;
     }
+    final all = ref.read(_mode == 'expense' ? expenseCategoriesProvider : incomeCategoriesProvider);
     final exists = _findCategory(all, check.value);
     if (exists != null) {
       setState(() {
@@ -123,10 +138,8 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         _addingCustom = false;
         _customNameController.clear();
       });
-      _snack('Cette catégorie existe déjà, elle est sélectionnée');
-      return;
+      return 'Cette catégorie existe déjà, elle est sélectionnée';
     }
-
     setState(() => _savingCategory = true);
     try {
       final wallet = ref.read(walletControllerProvider).value;
@@ -136,44 +149,82 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         walletId: wallet?.id,
       );
       ref.invalidate(categoriesProvider);
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _category = created.name;
         _categoryId = created.id;
         _addingCustom = false;
         _customNameController.clear();
       });
-      _snack('Catégorie « ${created.name} » créée');
+      return 'Catégorie « ${created.name} » créée';
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       _snack(TransactionsController.messageFrom(e));
+      return null;
     } finally {
       if (mounted) setState(() => _savingCategory = false);
     }
   }
 
+  /// Valide le nom saisi dans le champ « Autres » (bouton « Valider »).
+  Future<void> _createCustomCategory() async {
+    final message = await _ensureCustomCategory();
+    if (message == null || !mounted) return;
+    if (message.startsWith('Catégorie «')) {
+      await showSuccessDialog(
+        context,
+        title: 'Catégorie créée !',
+        message: 'Votre catégorie personnalisée a été enregistrée.',
+      );
+    } else {
+      showInfoSnackBar(context, message);
+    }
+  }
+
   void _key(String key) {
     HapticFeedback.selectionClick();
+    final code = CurrencyService.instance.current;
+    final decimalsAllowed = code != 'XOF';
     setState(() {
       if (key == '⌫') {
         if (_amount.isNotEmpty) {
           _amount = _amount.substring(0, _amount.length - 1);
         }
-      } else if (key == '000') {
-        if (_amount.isNotEmpty && _amount.length + 3 <= 9) {
+        return;
+      }
+      if (key == ',') {
+        if (!decimalsAllowed || _amount.contains(',')) return;
+        if (_amount.isEmpty) _amount = '0';
+        _amount += ',';
+        return;
+      }
+      if (key == '000') {
+        if (decimalsAllowed) return;
+        final integerPart = _amount.split(',').first;
+        if (_amount.isNotEmpty && integerPart.length + 3 <= 9) {
           _amount += '000';
         }
-      } else {
-        if (_amount == '0') _amount = '';
-        if (_amount.length + 1 <= 9) _amount += key;
+        return;
       }
-      _amount = _amount.replaceFirst(RegExp(r'^0+'), '');
+      // Chiffre simple.
+      final commaIndex = _amount.indexOf(',');
+      if (commaIndex != -1 && _amount.length - commaIndex - 1 >= 2) {
+        return; // 2 décimales max
+      }
+      if (commaIndex == -1) {
+        final integerPart = _amount;
+        if (integerPart.replaceAll(' ', '').length + 1 > (decimalsAllowed ? 7 : 9)) return;
+      }
+      if (_amount == '0') _amount = '';
+      _amount += key;
+      if (commaIndex == -1) _amount = _amount.replaceFirst(RegExp(r'^0+'), '');
     });
   }
 
   Future<void> _save() async {
-    final amount = int.tryParse(_amount.isEmpty ? '0' : _amount) ?? 0;
-    if (amount <= 0) {
+    final code = CurrencyService.instance.current;
+    final amount = enteredToXof(_amount, code);
+    if (amount == null || amount <= 0) {
       _snack('Entre un montant');
       return;
     }
@@ -182,11 +233,12 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
       _snack("Aucun portefeuille — crée-le d'abord");
       return;
     }
+    // Si l'utilisateur a saisi une catégorie libre sans valider, on la crée/retrouve ici.
+    final customMessage = await _ensureCustomCategory();
+    if (customMessage == null) return;
 
     setState(() => _saving = true);
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final tx = Transaction(
+    try {      final tx = Transaction(
         id: widget.editing?.id ?? '',
         walletId: wallet.id,
         type: _mode,
@@ -214,16 +266,25 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
       }
       if (!mounted) return;
       HapticFeedback.mediumImpact();
-      Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result.queued
-                ? 'Enregistrée hors-ligne — synchronisation dès le retour du réseau'
-                : (widget.editing == null ? 'Opération enregistrée' : 'Opération modifiée'),
-          ),
-        ),
+      if (result.queued) {
+        // Opération non encore confirmée par le serveur : feedback distinct.
+        showInfoSnackBar(
+          context,
+          'Enregistrée hors-ligne — synchronisation dès le retour du réseau',
+          icon: Icons.cloud_off_outlined,
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+      // La boîte de succès s'affiche au-dessus de la feuille, puis on ferme la feuille.
+      await showSuccessDialog(
+        context,
+        title: widget.editing == null ? 'Opération enregistrée !' : 'Opération modifiée !',
+        message: widget.editing == null
+            ? 'Votre opération a été enregistrée avec succès.'
+            : 'Vos informations ont été mises à jour avec succès.',
       );
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       _snack(TransactionsController.messageFrom(e));
@@ -233,7 +294,8 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    // Cohérence des messages d'erreur — même présentation partout.
+    showErrorSnackBar(context, message);
   }
 
   @override
@@ -241,7 +303,9 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fieldBg = isDark ? AppColors.darkBg : AppColors.offWhite;
-    final label = _amount.isEmpty ? '0' : formatXof(int.parse(_amount), withCurrency: false);
+    final currency = ref.watch(currencyControllerProvider).code;
+    final symbol = currencySymbol(currency);
+    final label = _amount.isEmpty ? '0' : groupEnteredInput(_amount);
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -279,7 +343,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                       ),
                     ),
                     TextSpan(
-                      text: ' FCFA',
+                      text: ' $symbol',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -407,12 +471,19 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                 ),
               ],
               const SizedBox(height: 12),
-              for (final row in const [
-                ['1', '2', '3'],
-                ['4', '5', '6'],
-                ['7', '8', '9'],
-                ['000', '0', '⌫'],
-              ])
+              for (final row in (currency == 'XOF'
+                      ? const [
+                          ['1', '2', '3'],
+                          ['4', '5', '6'],
+                          ['7', '8', '9'],
+                          ['000', '0', '⌫'],
+                        ]
+                      : const [
+                          ['1', '2', '3'],
+                          ['4', '5', '6'],
+                          ['7', '8', '9'],
+                          [',', '0', '⌫'],
+                        ]))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(

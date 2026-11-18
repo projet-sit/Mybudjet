@@ -54,8 +54,17 @@ class CategoryNameCheck {
   static CategoryNameCheck invalid(String error) => CategoryNameCheck._(false, '', '', error);
 }
 
+/// Valide un nom de catégorie saisi librement (« Autres ») :
+/// - obligatoire (après retrait des espaces),
+/// - 2 à 30 caractères,
+/// - la première lettre est mise en majuscule (automatique),
+/// - lettres, chiffres, espaces, apostrophes et tirets uniquement.
 CategoryNameCheck validateCategoryName(String input) {
-  final value = input.trim().replaceAll(RegExp(r'\s+'), ' ');
+  final trimmed = input.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (trimmed.isEmpty) {
+    return CategoryNameCheck.invalid('Le nom est obligatoire');
+  }
+  final value = trimmed[0].toUpperCase() + trimmed.substring(1);
   if (value.length < 2 || value.length > 30) {
     return CategoryNameCheck.invalid('Le nom doit faire entre 2 et 30 caractères');
   }

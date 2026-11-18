@@ -181,7 +181,7 @@ class TransactionTile extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              '$sign${formatXof(transaction.amount, withCurrency: false)}',
+              '$sign${formatMoneyCurrent(transaction.amount, withCurrency: false)}',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,

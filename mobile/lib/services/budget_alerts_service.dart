@@ -125,7 +125,7 @@ class BudgetAlertsService {
       decision.budget.hashCode ^ decision.threshold,
       isHundred ? 'Budget dépassé' : 'Budget bientôt atteint',
       '« ${decision.budget.category} » : '
-          '${formatXof(decision.budget.spent)} utilisés sur ${formatXof(decision.budget.limitAmount)}'
+          '${formatMoneyCurrent(decision.budget.spent)} utilisés sur ${formatMoneyCurrent(decision.budget.limitAmount)}'
           '${isHundred ? ' — le budget est dépassé.' : ' — 80 % du budget utilisés.'}',
       const NotificationDetails(
         android: AndroidNotificationDetails(

@@ -1,0 +1,11 @@
+title = "MyBudget gitleaks config"
+
+# Étend la configuration par défaut de gitleaks.
+[extend]
+useDefault = true
+
+# Exemple de mot de passe factice utilisé dans la documentation API :
+# ce n'est pas un secret, il est affiché tel quel dans docs/api.
+[[allowlists]]
+description = "exemples factices de la documentation (mot de passe d'exemple)"
+stopwords = ["exemple-factice"]

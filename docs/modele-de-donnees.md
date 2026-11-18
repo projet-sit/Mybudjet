@@ -13,7 +13,7 @@
 
 ## Résumé
 
-MyBudget stocke **tout en PostgreSQL 16** : utilisateurs, portefeuilles, transactions, budgets, périodes, objectifs, catégories. Pas de Firestore. Montants en `BIGINT` (entiers FCFA), dates `DATE` (`YYYY-MM-DD`), horodatages `TIMESTAMPTZ` (UTC). Le schéma est créé par les migrations `backend/src/database/migrations/` (001→010 ; **004 absent**, 003 enchaîne sur 005). La migration 010 ajoute les catégories personnalisées (`categories`), les liens `category_id` et la colonne `users.data_epoch` (cf. `src/database/backfill_categories.js` pour le rattachement des données historiques).
+MyBudget stocke **tout en PostgreSQL 16** : utilisateurs, portefeuilles, transactions, budgets, périodes, objectifs, catégories. Pas de Firestore. Montants en `BIGINT` (entiers, **référence XOF** — conversion à l'affichage uniquement, la préférence d'affichage de l'utilisateur n'est jamais écrite en base), dates `DATE` (`YYYY-MM-DD`), horodatages `TIMESTAMPTZ` (UTC). Le schéma est créé par les migrations `backend/src/database/migrations/` (001→010 ; **004 absent**, 003 enchaîne sur 005). La migration 010 ajoute les catégories personnalisées (`categories`), les liens `category_id` et la colonne `users.data_epoch` (cf. `src/database/backfill_categories.js` pour le rattachement des données historiques).
 
 ## Diagramme entité-association (erDiagram)
 

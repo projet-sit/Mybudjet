@@ -5,24 +5,29 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 
 ## Sommaire
 
-- [Non publié (Unreleased)](#non-publié-unreleased)
-- [1.1.0 (2026-11-15)](#110-2026-11-15) — lecture : APK arm64 signé release
+- [1.2.0 (2026-11-18)](#120-2026-11-18)
+- [1.1.0 (2026-11-15)](#110-2026-11-15) - lecture : APK arm64 signé release
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
-## Non publié (Unreleased)
+## 1.2.0 (2026-11-18)
 
 ### Ajouté
 
-- **Catégories personnalisées** : création via « Autres » (champ inline + Valider), 2-30 caractères, doublons insensibles casse/accents (y compris avec les défauts : 409 + catégorie sélectionnée automatiquement), max 30 par type, ordre défauts → personnalisées → « Autres », renommage avec propagation aux opérations/budgets, suppression avec réaffectation à « Autres » (budgets liés supprimés avec confirmation), `category_id` sur transactions et budgets, recherche/stats/CSV/budgets compatibles, création hors-ligne avec id UUID client et fusion anti-doublon au retour du réseau.
-- **« Réinitialiser tout » = compte comme neuf** : `POST /me/reset` — suppression définitive et atomique (une seule transaction PostgreSQL) de toutes les données du compte ; `data_epoch` incrémenté ; les autres appareils effacent leur cache au prochain contact ; le client purge cache + file d'attente et redirige vers la création du premier portefeuille ; export CSV proposé avant confirmation ; hors-ligne refusé.
-- **Alertes de budget réelles** (Android 13+) : notification locale quand une opération fait atteindre 80 % puis 100 % d'un budget, une seule fois par seuil et par période ; l'interrupteur demande `POST_NOTIFICATIONS` à l'activation et coupe tout si elle est refusée.
+- **Devises au choix** : Franc CFA (XOF, défaut, entiers), Euro (EUR, parité fixe 1 EUR = 655,957 XOF), Dollar américain (USD, taux variable récupéré via open.er-api.com, mis en cache avec date de mise à jour, taux de secours en dur hors ligne). Conversion uniquement à l'affichage et à la saisie (stockage toujours en XOF) ; la date de dernière mise à jour du taux USD est affichée dans le panneau Devise ; confirmation « Les montants seront convertis au taux du jour » au changement ; tous les montants de l'app (opérations, soldes, totaux, budgets, épargne, stats, export PDF) sont reconvertis ; saisie avec décimales pour €/$ (le FCFA garde les entiers et le pavé `000`).
+- **Success UX** : boîte de confirmation animée (cercle vert + coche verte dessinée progressivement, rebond + fondu) affichée après chaque opération réellement réussie : création de compte, connexion, enregistrement de portefeuille, ajout/modification d'opération, création de catégorie, budgets, épargne, suppression, restauration, export PDF, mot de passe, suppression de compte/données. Jamais affichée en cas d'échec ; retour haptique ; action optionnelle (ex. « Annuler » après suppression). Composant unique réutilisable `core/widgets/app_feedback.dart`.
+- **Zone de danger** : « Supprimer tout » — dialogue « Télécharger mes données en PDF / Supprimer sans télécharger / Annuler », puis confirmation finale (« Cette action est irréversible. Toutes vos opérations, catégories personnalisées et préférences seront supprimées. ») ; efface tout et remet la devise sur FCFA, l'app repart de l'état initial.
+- **Politique de confidentialité** dans le Profil (écran défilable, rédaction alignée sur le fonctionnement réel : stockage serveur + cache local, JWT, aucune vente ni partage, vos droits, nous contacter).
+- **Nous contacter** (Profil) : ouvre WhatsApp avec un message pré-rempli (numéro jamais affiché, présent uniquement dans `core/constants.dart`).
+- Export PDF entièrement réécrit : noir et blanc strict, A4 portrait, en-tête « MYBUDGET — Relevé des opérations », date/heure, devise, période couverte, résumé revenus/dépenses/solde, tableau Date|Type|Catégorie|Description|Montant avec en-tête répété à chaque page, « Page X / Y » en pied, nom de fichier `operations_AAAA-MM-JJ.pdf`, repli hors ligne sur le cache local.
+- Recherche opérations : filtre en temps réel (~300 ms) par catégorie, note, montant et date — insensible casse/accents ; « Aucune opération trouvée » si rien ne correspond.
+- **Catégories personnalisées** : création via « Autres » (champ inline + Valider), 2-30 caractères, **première lettre en majuscule**, doublons insensibles casse/accents (y compris avec les défauts : 409 + catégorie sélectionnée automatiquement), max 30 par type, ordre défauts → personnalisées → « Autres », renommage avec propagation aux opérations/budgets, suppression avec réaffectation à « Autres » (budgets liés supprimés avec confirmation), `category_id` sur transactions et budgets, recherche/stats/CSV/budgets compatibles, création hors-ligne avec id UUID client et fusion anti-doublon au retour du réseau.
 - Écran « Aide et FAQ » dans l'app (Profil → Aide et FAQ) : 15 questions en accordéon, intégrées hors-ligne, français simple. Test de widget inclus (ouverture/fermeture, aucun overflow à 360×640).
 - Champ libre « Dans quoi as-tu dépensé ? » / « D'où vient cet argent ? » dans la feuille d'ajout/modification : la note est enregistrée avec l'opération et affichée dans la liste (utile quand aucune catégorie ne convient).
 - Photo de profil dans Profil : galerie ou appareil photo (permission Android demandée), stockée localement sur le téléphone, jamais envoyée au serveur ; « Retirer la photo » pour revenir à l'initiale.
 - Inscription/connexion par téléphone (e-mail optionnel), réveil et ré-essai côté client pour la tolérance au cold start Render.
 - Reset de mot de passe côté app (réveil serveur puis ré-essai automatique).
-- Documentation complète du projet (`docs/`) : architecture, modèle de données, règles métier, hors-ligne, sécurité, déploiement, tests, dépannage, API OpenAPI 3.1, guide utilisateur, dossier de conception.
+- Documentation complète du projet (`docs/`) : architecture, modèle de données, règles métier, hors-ligne, sécurité, déploiement, tests, dépannage, API OpenAPI 3.1, guide utilisateur (captures d'écran), dossier de conception.
 - Script `docs/build.ps1` pour régénérer diagrammes, site API et PDFs/DOCX.
 - Migration SQL 010 (categories + `category_id` + `users.data_epoch`). Backfill idempotent des catégories historiques dans `npm run migrate` (jamais lancée en production depuis ce poste).
 - Routeur GoRouter persistant (`refreshListenable`) : une seule pile, pas de redirection perdue en fin d'inscription.
@@ -30,13 +35,14 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 
 ### Modifié
 
+- **Recherche opérations (correctif majeur)** : la recherche par catégorie/description/montant ne tournait plus indéfiniment — la cause était une exception de locale non initialisée dans l'isolate de `compute()`, désormais sans aucune dépendance intl (formatage manuel), avec `try/catch/finally` et repli synchrone ; debounce 300 ms.
+- **Export PDF** : réécrit (voir « Ajouté ») ; disponible aussi hors ligne (repli sur le cache local) ; utilisé par l'option « Télécharger mes données en PDF » de la Zone de danger.
+- **« Réinitialiser tout »** devient **« Supprimer tout »** (Zone de danger du Profil, menu ⋯ de la carte budget) : flux à deux dialogues (PDF optionnel en premier, confirmation finale exacte), plus sans saisie de `REINITIALISER`.
 - README racine entièrement réécrit (installation, tests, build, déploiement, dépannage).
 - `docs/politique-confidentialite.md` aligné sur la réalité (PostgreSQL + JWT, pas de Firebase).
-- Routeur GoRouter persistant (`refreshListenable`) : une seule pile, pas de redirection perdue en fin d'inscription.
 - « Historique des périodes » retiré de l'UI (non opérationnel avec l'ancien backend).
 - Épargne recâblée sur les dépôts/retraits réels (`PATCH /savings` n'existe plus).
 - Réinitialisation : l'ancienne logique « archive + annulation 10 s » est remplacée par la réinitialisation complète (« une seule logique de reset »).
-- Aide et FAQ : 15 questions, incluant les catégories personnalisées et la réinitialisation complète.
 
 ## 1.1.0 (2026-11-15)
 

@@ -5,7 +5,7 @@ lang: fr
 
 # Dossier de conception — MYBUDGET
 
-*Gestion de budget personnel en FCFA — mobile (Flutter) + API (Node.js/PostgreSQL)*
+*Gestion de budget personnel en XOF/FCFA (multi-devise à l'affichage) — mobile (Flutter) + API (Node.js/PostgreSQL)*
 
 **Résumé en 3 lignes :** MyBudget répond au besoin de noter ses dépenses et revenus en quelques secondes, comprendre où part son argent et garder une épargne à portée de main — même sans réseau. Le système est une app mobile Flutter connectée à une API Express/PostgreSQL auto-hébergée sur Render. Ce dossier présente le contexte, le besoin, les modèles (cas d'utilisation, MCD/MLD, classes, séquences), l'architecture, la sécurité, les tests, les limites et les perspectives.
 
@@ -63,7 +63,7 @@ Dans la vie quotidienne, l'argent sort vite : transports, restauration, transfer
 |---|---|---|---|
 | F1 | Compte utilisateur | Inscription/connexion par téléphone + mot de passe ; reset de mot de passe | Must |
 | F2 | Portefeuille | Création, montant initial historisable | Must |
-| F3 | Opérations | Dépense/revenu : montant entier FCFA, catégorie, date, mode de paiement, note | Must |
+| F3 | Opérations | Dépense/revenu : montant entier (stocké en XOF), catégorie, date, mode de paiement, note ; affichage/saisie en devise active (XOF/EUR/USD) | Must |
 | F4 | Reste et solde | Solde recalculé côté serveur, atomique ; Reste = solde − épargne | Must |
 | F5 | Épargne | Versement, retrait, tout récupérer ; exclue des dépenses et stats | Must |
 | F6 | Budgets | Par catégorie, montant mensuel, alertes 50/80/100 % | Must |
@@ -72,11 +72,12 @@ Dans la vie quotidienne, l'argent sort vite : transports, restauration, transfer
 | F9 | Statistiques | Semaine/mois/année, comparaison N−1, moyenne/jour, répartition par catégorie | Should |
 | F10 | Statistiques | Hebdomadaire, mensuelle, annuelle | Should |
 | F11 | Objectifs d'épargne | Cibles, contributions, échéance, statut | Could |
-| F12 | Export | PDF (app) / CSV (API) | Could |
+| F12 | Export | PDF (app, `operations_AAAA-MM-JJ.pdf`, devise active) / CSV (API) | Could |
 | F13 | Aide et FAQ | 15 questions en accordéon, hors-ligne | Should |
 | F14 | Hors-ligne | File d'attente + synchronisation au retour (id client UUID, fusion catégories) | Must |
-| F15 | Catégories personnalisées | Création via « Autres », renommage, suppression (réaffectation à « Autres »), 30 max par type, hors-ligne | Should |
-| F16 | Réinitialisation complète | Compte « comme neuf » (atomique, `data_epoch`, multi-appareils) | Must |
+| F15 | Catégories personnalisées | Création via « Autres » (nom obligatoire, 2–30 caractères, première lettre en majuscule), renommage, suppression (réaffectation à « Autres »), 30 max par type, hors-ligne | Should |
+| F16 | Supprimer tout | Compte « comme neuf » (atomique, `data_epoch`, multi-appareils) ; Zone de danger, PDF optionnel avant, confirmation forte | Must |
+| F18 | Devises | XOF (défaut, entiers), EUR (parité fixe 655,957), USD (taux variable, cache + secours, date affichée) ; conversion à l'affichage/saisie uniquement | Must |
 | F17 | Alertes de budget réelles | Notification locale à 80 %/100 %, une fois par seuil et période | Should |
 
 ## Besoins non fonctionnels
@@ -209,7 +210,9 @@ Règle clé : `Wallet.available() = max(0, balance − savingsAmount)`. Les six 
 
 | Terme | Définition |
 |---|---|
-| FCFA | Franc de la zone franc (XOF), unité de compte de l'app ; entiers uniquement |
+| XOF / FCFA | Franc de la zone franc (XOF), unité de référence de l'app ; entiers uniquement à la saisie FCFA |
+| EUR | Euro — affichage/saisie, parité fixe officielle (1 EUR = 655,957 XOF) |
+| USD | Dollar américain (affichage/saisie, taux variable, EUR/USD convertis à l'affichage) |
 | Reste | Montant dépensable : `balance − savings_amount` (jamais négatif) |
 | Épargne | Réserve interne au portefeuille (`savings_amount`), hors dépenses/stats |
 | Période | Mois calendaire suivi ; remise à zéro = clôture + archive + nouvelle période |

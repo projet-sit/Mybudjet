@@ -54,6 +54,21 @@ String formatMoney(int amountXof, {bool withCurrency = true, String currency = '
 String formatMoneyCurrent(int amountXof, {bool withCurrency = true}) =>
     formatMoney(amountXof, withCurrency: withCurrency, currency: CurrencyService.instance.current);
 
+/// Reste du « Budget du mois » en XOF (devise de référence, entiers).
+/// Formule identique côté serveur : base = initial + revenus − épargne.
+/// Renvoie null si le budget n'est pas défini (base ≤ 0) — comportement non limité.
+int? budgetRemainingXof({
+  required int initialAmount,
+  required int totalIncomes,
+  required int totalExpenses,
+  required int savingsAmount,
+}) {
+  final base = initialAmount + totalIncomes - savingsAmount;
+  if (base <= 0) return null; // budget non défini
+  final remaining = base - totalExpenses;
+  return remaining < 0 ? 0 : remaining;
+}
+
 /// Symbole court d'une devise (pour les suffixes de saisie).
 String currencySymbol(String code) => switch (code) {
       'EUR' => '€',

@@ -66,8 +66,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
       if (!mounted) return;
       await showSuccessDialog(
         context,
-        title: 'Épargne enregistrée !',
-        message: 'Votre épargne a été mise à jour avec succès.',
+        message: 'Épargne de ${formatMoneyCurrent(amount)} enregistrée.',
       );
     } catch (e) {
       if (!mounted) return;

@@ -135,7 +135,7 @@ Comment ça marche :
 
 - Chaque montant est stocké en base en XOF ; rien n'est réécrit quand tu changes de devise. La conversion n'existe qu'à l'affichage et à la saisie — tu ne perds jamais de précision.
 - Au changement, un message te le confirme : « Les montants seront convertis au taux du jour ».
-- EUR : parité fixe, jamais d'API. USD : taux du jour récupéré automatiquement à l'ouverture ; hors ligne, le dernier taux connu (ou un taux de secours) est utilisé. La date de dernière mise à jour du taux USD est affichée dans le panneau Devise.
+- EUR : parité fixe, jamais d'API. USD : taux du jour récupéré automatiquement à l'ouverture ; hors ligne, le dernier taux connu (ou un taux de secours) est utilisé.
 - Toutes tes opérations existantes, tes soldes, tes totaux, tes statistiques et l'export PDF sont convertis. Les nouvelles opérations sont saisies dans la devise active (avec décimales pour l'euro et le dollar).
 
 ![Écran Profil — Préférences, Données et Devise (thème sombre ; sur cette version, la zone de danger s'appelait encore « Réinitialiser tout à 0 »)](img/profil.jpeg)

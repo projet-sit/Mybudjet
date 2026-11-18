@@ -33,11 +33,11 @@ class _MainShellState extends ConsumerState<MainShell> {
     final notice = ref.read(authNoticeProvider);
     if (notice == null || !mounted) return;
     ref.read(authNoticeProvider.notifier).set(null);
-    final (title, message) = switch (notice) {
-      AuthNotice.login => ('Connexion réussie !', 'Bon retour ! Vous êtes connecté à votre compte.'),
-      AuthNotice.register => ('Compte créé !', 'Votre compte a été créé avec succès. Bienvenue sur MyBudget !'),
+    final message = switch (notice) {
+      AuthNotice.login => 'Connexion réussie. Bon retour !',
+      AuthNotice.register => 'Votre compte a bien été créé. Bienvenue !',
     };
-    await showSuccessDialog(context, title: title, message: message);
+    await showSuccessDialog(context, message: message);
   }
 
   void _openQuickAdd(BuildContext context) {

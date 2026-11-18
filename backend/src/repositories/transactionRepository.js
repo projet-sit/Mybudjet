@@ -125,7 +125,7 @@ async function withdrawAllSavings({ walletId, date, time }) {
 async function createTransaction({ walletId, type, amount, category, categoryId, description, date, time, paymentMethod }) {
   return withTransaction(async (client) => {
     const locked = await client.query(
-      'SELECT id, user_id, balance, savings_amount, start_date FROM wallets WHERE id = $1 FOR UPDATE',
+      'SELECT id, user_id, initial_amount, balance, savings_amount, start_date FROM wallets WHERE id = $1 FOR UPDATE',
       [walletId]
     );
     if (locked.rows.length === 0) {
@@ -133,7 +133,33 @@ async function createTransaction({ walletId, type, amount, category, categoryId,
     }
     const currentBalance = Number(locked.rows[0].balance);
     const available = currentBalance - Number(locked.rows[0].savings_amount || 0);
+    const initialAmount = Number(locked.rows[0].initial_amount || 0);
+    const savingsAmount = Number(locked.rows[0].savings_amount || 0);
     const period = await periodRepository.ensureActiveWithClient(client, locked.rows[0]);
+
+    // Règle « Budget du mois » : une dépense ne doit jamais dépasser le reste
+    // du budget (devise de référence XOF, entiers).
+    if (type === 'expense') {
+      const sums = await client.query(
+        `SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount END), 0) AS income,
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) AS spent
+         FROM transactions WHERE wallet_id = $1 AND period_id = $2`,
+        [walletId, period.id]
+      );
+      const income = Number(sums.rows[0].income);
+      const spent = Number(sums.rows[0].spent);
+      const base = initialAmount + income - savingsAmount;
+      if (base > 0) {
+        const remaining = Math.max(0, base - spent);
+        if (amount > remaining) {
+          throw ApiError.conflict(
+            'BUDGET_EXCEEDED',
+            `Montant supérieur au budget restant (${remaining} FCFA)`,
+            { remaining, budget: base, spent }
+          );
+        }
+      }
+    }
 
     if (type === 'expense' && amount > available) {
       throw ApiError.conflict(
@@ -168,13 +194,15 @@ async function createTransaction({ walletId, type, amount, category, categoryId,
 async function updateTransaction({ walletId, txId, type, amount, category, categoryId, description, date, time, paymentMethod }) {
   return withTransaction(async (client) => {
     const locked = await client.query(
-      'SELECT balance, savings_amount FROM wallets WHERE id = $1 FOR UPDATE',
+      'SELECT id, user_id, start_date, initial_amount, balance, savings_amount FROM wallets WHERE id = $1 FOR UPDATE',
       [walletId]
     );
     if (locked.rows.length === 0) throw ApiError.notFound('Portefeuille introuvable');
     const currentBalance = Number(locked.rows[0].balance);
     const currentAvailable =
       currentBalance - Number(locked.rows[0].savings_amount || 0);
+    const initialAmount = Number(locked.rows[0].initial_amount || 0);
+    const savingsAmount = Number(locked.rows[0].savings_amount || 0);
 
     const existing = await client.query(
       'SELECT * FROM transactions WHERE id = $1 AND wallet_id = $2 FOR UPDATE',
@@ -187,6 +215,30 @@ async function updateTransaction({ walletId, txId, type, amount, category, categ
       throw ApiError.validation('Une opération d’épargne se gère depuis l’écran Épargne', {
         field: 'type',
       });
+    }
+
+    // Règle « Budget du mois » : une dépense ne doit jamais dépasser le reste
+    // du budget ; l'ancien montant de cette opération est inclus dans le reste.
+    if (type === 'expense' || old.type === 'expense') {
+      const period = await periodRepository.ensureActiveWithClient(client, locked.rows[0]);
+      const sums = await client.query(
+        `SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount END), 0) AS income,
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount END), 0) AS spent
+         FROM transactions WHERE wallet_id = $1 AND period_id = $2 AND id <> $3`,
+        [walletId, period.id, txId]
+      );
+      const income = Number(sums.rows[0].income);
+      const spentExcludingSelf = Number(sums.rows[0].spent);
+      const base = initialAmount + income - savingsAmount;
+      const newDelta = type === 'expense' ? amount : 0;
+      if (base > 0 && spentExcludingSelf + newDelta > base) {
+        const remaining = Math.max(0, base - spentExcludingSelf);
+        throw ApiError.conflict(
+          'BUDGET_EXCEEDED',
+          `Montant supérieur au budget restant (${remaining} FCFA)`,
+          { remaining, budget: base, spent: spentExcludingSelf + newDelta }
+        );
+      }
     }
 
     const contribution = (t, a) => (t === 'expense' ? -a : a);

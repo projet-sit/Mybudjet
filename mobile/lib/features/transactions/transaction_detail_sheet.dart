@@ -46,8 +46,7 @@ class TransactionDetailSheet extends ConsumerWidget {
       // La boîte de succès s'affiche AU-DESSUS de la fiche, puis on ferme la fiche.
       await showSuccessDialog(
         context,
-        title: 'Opération supprimée !',
-        message: 'Votre opération a été supprimée avec succès.',
+        message: 'Opération de ${formatMoneyCurrent(transaction.amount)} supprimée.',
       );
       if (context.mounted) Navigator.of(context).pop();
     } catch (e) {

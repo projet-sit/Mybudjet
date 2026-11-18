@@ -305,9 +305,8 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
       if (!mounted) return;
       await showSuccessDialog(
         context,
-        title: 'Limite ajustée !',
-        message: 'Votre budget a été mis à jour.',
-        duration: const Duration(milliseconds: 1100),
+        message: 'Limite ajustée à ${formatMoneyCurrent(next)}.',
+        duration: const Duration(milliseconds: 1400),
       );
     } catch (e) {
       if (!mounted) return;
@@ -344,8 +343,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
         } else {
           await showSuccessDialog(
             context,
-            title: 'Budget supprimé !',
-            message: 'Votre budget a été supprimé avec succès.',
+            message: 'Budget de ${b.category} supprimé.',
           );
         }
       } catch (e) {
@@ -435,8 +433,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
         } else {
           await showSuccessDialog(
             context,
-            title: 'Budget créé !',
-            message: 'Votre budget a été créé avec succès.',
+            message: 'Budget de ${result.category} créé.',
           );
         }
       } catch (e) {
@@ -491,8 +488,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
           } else {
             await showSuccessDialog(
               context,
-              title: 'Limite mise à jour !',
-              message: 'Votre budget a été mis à jour avec succès.',
+              message: 'Limite de ${b.category} ajustée à ${formatMoneyCurrent(amount)}.',
             );
           }
         } catch (e) {

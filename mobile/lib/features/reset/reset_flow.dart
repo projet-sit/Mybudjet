@@ -106,8 +106,7 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   await showSuccessDialog(
     context,
-    title: 'Suppression effectuée !',
-    message: 'Toutes vos données ont été supprimées avec succès.',
+    message: 'Toutes vos données ont été supprimées.',
   );
   if (!context.mounted) return;
   // L'app repart de zéro : création du premier portefeuille (comme après

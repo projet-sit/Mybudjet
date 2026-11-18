@@ -63,14 +63,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       if (!mounted) return;
       await showSuccessDialog(
         context,
-        title: 'Opération supprimée !',
-        message: 'Votre opération a été supprimée avec succès.',
-        actionLabel: 'Annuler',
-        onAction: () {
-          if (context.mounted) Navigator.of(context).pop();
-          _restore(tx);
-        },
+        message: 'Opération de ${formatMoneyCurrent(tx.amount)} supprimée.',
       );
+      // Restauration possible pendant quelques secondes via un bouton Annuler.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Restaurer l’opération supprimée ?'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Annuler',
+              onPressed: () => _restore(tx),
+            ),
+          ),
+        );
+      }
       if (_isSearching) await _runSearch();
     } catch (e) {
       if (mounted) setState(() => _hidden.remove(tx.id));
@@ -88,8 +95,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       if (!mounted) return;
       await showSuccessDialog(
         context,
-        title: 'Opération restaurée !',
-        message: 'Votre opération a été restaurée avec succès.',
+        message: 'Opération de ${formatMoneyCurrent(tx.amount)} restaurée.',
       );
     } catch (e) {
       if (mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));

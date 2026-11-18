@@ -23,7 +23,7 @@ const _kHairline = PdfColor(0, 0, 0); // filets fins noirs
 /// - en-tête : nom de l'application, titre « Relevé des opérations »,
 ///   date/heure de génération, devise utilisée, période couverte ;
 /// - résumé : total des revenus, total des dépenses, solde ;
-/// - tableau : Date | Type | Catégorie | Description | Montant
+/// - tableau : Date | Type | Catégorie | Montant
 ///   (filets fins noirs, en-tête en gras répété à chaque page, montants
 ///   alignés à droite avec « + » ou « - ») ;
 /// - pied de page : « Page X / Y » ;
@@ -228,11 +228,10 @@ class TransactionPdfExportService {
             pw.Table(
               border: pw.TableBorder.all(color: _kHairline, width: 0.4),
               columnWidths: const {
-                0: pw.FixedColumnWidth(64), // Date
-                1: pw.FixedColumnWidth(58), // Type
-                2: pw.FixedColumnWidth(84), // Catégorie
-                3: pw.FlexColumnWidth(3), // Description
-                4: pw.FixedColumnWidth(92), // Montant
+                0: pw.FixedColumnWidth(78), // Date
+                1: pw.FixedColumnWidth(66), // Type
+                2: pw.FlexColumnWidth(2), // Catégorie
+                3: pw.FixedColumnWidth(110), // Montant
               },
               children: [
                 pw.TableRow(
@@ -241,7 +240,6 @@ class TransactionPdfExportService {
                     _headerCell('Date'),
                     _headerCell('Type'),
                     _headerCell('Catégorie'),
-                    _headerCell('Description'),
                     _headerCell('Montant', alignRight: true),
                   ],
                 ),
@@ -342,7 +340,6 @@ class TransactionPdfExportService {
         cell(_formatDate(t.date)),
         cell(typeLabel),
         cell(t.category),
-        cell((t.description?.trim().isNotEmpty ?? false) ? t.description!.trim() : '-'),
         cell('$sign ${formatMoney(t.amount, currency: code)}', alignRight: true),
       ],
     );

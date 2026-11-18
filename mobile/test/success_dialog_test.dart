@@ -18,92 +18,64 @@ void main() {
     );
   }
 
-  testWidgets('SuccessDialog : titre, message, bouton et animation affichés', (tester) async {
+  testWidgets('SuccessDialog : coche verte, message, aucun bouton', (tester) async {
     await tester.pumpWidget(
       harness(
         (context) => showSuccessDialog(
           context,
-          title: 'Opération enregistrée !',
-          message: 'Votre opération a été enregistrée avec succès.',
+          message: 'Dépense de 2 000 FCFA ajoutée.',
         ),
       ),
     );
     await tester.tap(find.text('ouvrir'));
-    await tester.pump(); // transition
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Opération enregistrée !'), findsOneWidget);
-    expect(find.text('Votre opération a été enregistrée avec succès.'), findsOneWidget);
-    expect(find.text('C’est compris'), findsOneWidget);
-    // Le cercle animé est présent (CustomPaint dédié).
+    expect(find.text('Dépense de 2 000 FCFA ajoutée.'), findsOneWidget);
+    // Aucun bouton de confirmation dans la boîte de succès.
+    expect(find.widgetWithText(FilledButton, 'C’est compris'), findsNothing);
     expect(find.byKey(const ValueKey('success-circle')), findsOneWidget);
-    // Aucun overflow.
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('SuccessDialog : se ferme automatiquement après la durée', (tester) async {
+  testWidgets('SuccessDialog : se ferme tout seul après la durée', (tester) async {
     await tester.pumpWidget(
       harness(
         (context) => showSuccessDialog(
           context,
-          title: 'Erreur non affichée',
-          message: 'Test.',
+          message: 'Compte créé.',
           duration: const Duration(milliseconds: 600),
         ),
       ),
     );
     await tester.tap(find.text('ouvrir'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Erreur non affichée'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Compte créé.'), findsOneWidget);
 
-    // Après la durée + marge, la boîte est fermée (transition de fermeture incluse).
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Erreur non affichée'), findsNothing);
+    expect(find.text('Compte créé.'), findsNothing);
   });
 
-  testWidgets('SuccessDialog : bouton d’action personnalisé (« Annuler »)', (tester) async {
-    var actionCalls = 0;
+  testWidgets('SuccessDialog : se ferme en touchant en dehors', (tester) async {
     await tester.pumpWidget(
       harness(
         (context) => showSuccessDialog(
           context,
-          title: 'Opération supprimée !',
-          message: 'Votre opération a été supprimée.',
-          actionLabel: 'Annuler',
-          onAction: () => actionCalls++,
+          message: 'Opération enregistrée.',
+          duration: const Duration(days: 1), // ne se ferme pas seul pendant le test
         ),
       ),
     );
     await tester.tap(find.text('ouvrir'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Opération enregistrée.'), findsOneWidget);
 
-    expect(find.text('Annuler'), findsOneWidget);
-    await tester.tap(find.text('Annuler'));
-    expect(actionCalls, 1);
-    // Avec une action, la boîte ne se ferme pas automatiquement.
-    expect(find.text('Opération supprimée !'), findsOneWidget);
-  });
-
-  testWidgets('SuccessDialog : se ferme en touchant le bouton de validation', (tester) async {
-    await tester.pumpWidget(
-      harness(
-        (context) => showSuccessDialog(
-          context,
-          title: 'Compte créé !',
-          message: 'Bienvenue.',
-          duration: const Duration(days: 1), // ne se fermera pas seul durant le test
-        ),
-      ),
-    );
-    await tester.tap(find.text('ouvrir'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    await tester.tap(find.text('C’est compris'));
+    // Touche à l'extérieur du dialogue (le fond).
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
-    expect(find.text('Compte créé !'), findsNothing);
+    expect(find.text('Opération enregistrée.'), findsNothing);
   });
 }

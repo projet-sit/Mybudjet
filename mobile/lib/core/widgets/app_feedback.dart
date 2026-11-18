@@ -85,17 +85,14 @@ void showWarningSnackBar(BuildContext context, String message) {
 
 /// Affiche la boîte de confirmation de succès.
 ///
-/// - Se ferme automatiquement après [duration] (défaut 1,7 s).
-/// - Un appui sur le fond ou « C'est compris » ferme immédiatement.
-/// - Si [actionLabel] est fourni (ex. « Annuler » pour restaurer une suppression),
-///   un bouton d'action est affiché et la boîte ne se ferme PAS automatiquement.
+/// - Se ferme automatiquement après [duration] (défaut 2,2 s),
+///   et au toucher en dehors.
+/// - Aucun bouton : l'élément contient uniquement le cercle avec la coche
+///   et le message décrivant l'opération effectuée.
 Future<void> showSuccessDialog(
   BuildContext context, {
-  required String title,
   required String message,
-  Duration duration = const Duration(milliseconds: 1700),
-  String? actionLabel,
-  VoidCallback? onAction,
+  Duration duration = const Duration(milliseconds: 2200),
   bool barrierDismissible = true,
 }) {
   return showGeneralDialog<void>(
@@ -106,11 +103,8 @@ Future<void> showSuccessDialog(
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return SuccessDialog(
-        title: title,
         message: message,
         duration: duration,
-        actionLabel: actionLabel,
-        onAction: onAction,
         onClose: () => Navigator.of(dialogContext).pop(),
       );
     },
@@ -124,23 +118,18 @@ Future<void> showSuccessDialog(
   );
 }
 
-/// Boîte de confirmation animée : cercle vert + coche verte, titre, message.
+/// Boîte de confirmation animée : cercle plein vert + coche blanche, et
+/// message décrivant l'opération effectuée. Aucun bouton.
 class SuccessDialog extends StatefulWidget {
   const SuccessDialog({
     super.key,
-    required this.title,
     required this.message,
-    this.duration = const Duration(milliseconds: 1700),
-    this.actionLabel,
-    this.onAction,
+    this.duration = const Duration(milliseconds: 2200),
     this.onClose,
   });
 
-  final String title;
   final String message;
   final Duration duration;
-  final String? actionLabel;
-  final VoidCallback? onAction;
   final VoidCallback? onClose;
 
   @override
@@ -179,8 +168,7 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
   }
 
   void _scheduleAutoClose() {
-    if (widget.actionLabel != null) return; // une action est proposée : on attend l'utilisateur
-    _autoCloseTimer = Timer(widget.duration + const Duration(milliseconds: 350), () {
+    _autoCloseTimer = Timer(widget.duration, () {
       if (mounted) widget.onClose?.call();
     });
   }
@@ -202,7 +190,7 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
         child: Container(
           key: const ValueKey('success-dialog'),
           width: math.min(320, MediaQuery.sizeOf(context).width - 64),
-          padding: const EdgeInsets.fromLTRB(24, 26, 24, 18),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
           decoration: BoxDecoration(
             color: scheme.surface,
             borderRadius: BorderRadius.circular(26),
@@ -231,64 +219,28 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
                 },
                 child: CustomPaint(
                   key: const ValueKey('success-circle'),
-                  size: const Size(96, 96),
+                  size: const Size(92, 92),
                   painter: _SuccessCirclePainter(
                     progress: _checkProgress,
-                    ringColor: AppColors.incomeGreen,
-                    checkColor: AppColors.incomeGreen,
-                    fillColor: AppColors.incomeGreen.withValues(alpha: 0.13),
+                    fillColor: AppColors.incomeGreen,
+                    checkColor: Colors.white,
                   ),
                 ),
               ),
               const SizedBox(height: 18),
               FadeTransition(
                 opacity: _textOpacity,
-                child: Column(
-                  children: [
-                    Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.message,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, height: 1.45, color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  if (widget.actionLabel != null) ...[
-                    Flexible(
-                      child: TextButton(
-                        onPressed: widget.onAction,
-                        child: Text(widget.actionLabel!, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.incomeGreen,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(0, 44),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: widget.onClose,
-                      child: const Text('C’est compris'),
-                    ),
+                child: Text(
+                  widget.message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.4,
+                    letterSpacing: -0.2,
+                    color: scheme.onSurface,
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -298,37 +250,25 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
   }
 }
 
-/// Cercle vert (anneau + fond teinté) avec coche verte dessinée progressivement.
+/// Cercle PLEIN vert avec coche blanche tracée progressivement.
 class _SuccessCirclePainter extends CustomPainter {
   _SuccessCirclePainter({
     required this.progress,
-    required this.ringColor,
-    required this.checkColor,
     required this.fillColor,
+    required this.checkColor,
   });
 
   final Animation<double> progress;
-  final Color ringColor;
-  final Color checkColor;
   final Color fillColor;
+  final Color checkColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 4;
+    final radius = size.width / 2 - 3;
 
-    // Fond teinté
+    // Cercle plein (validé visuellement comme dans les apps courantes).
     canvas.drawCircle(center, radius, Paint()..color = fillColor);
-
-    // Anneau
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = ringColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.5,
-    );
 
     // Coche verte, dessinée progressivement
     final t = progress.value.clamp(0.0, 1.0);
@@ -358,7 +298,7 @@ class _SuccessCirclePainter extends CustomPainter {
       Paint()
         ..color = checkColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 6.5
+        ..strokeWidth = 7.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..isAntiAlias = true,
@@ -368,6 +308,5 @@ class _SuccessCirclePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SuccessCirclePainter oldDelegate) =>
       oldDelegate.progress.value != progress.value ||
-      oldDelegate.ringColor != ringColor ||
-      oldDelegate.checkColor != checkColor;
+      oldDelegate.fillColor != fillColor;
 }

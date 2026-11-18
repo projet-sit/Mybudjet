@@ -31,7 +31,7 @@ const List<FaqItem> faqItems = [
   ),
   FaqItem(
     'À quoi servent mes catégories personnalisées ?',
-    'Quand tu touches « Autres » en créant une opération, tu peux écrire le nom de ta catégorie (par exemple Coiffure). Elle apparaît ensuite dans la liste, entre les catégories par défaut et « Autres ». Tu peux la renommer ou la supprimer depuis Profil → Mes catégories ; les opérations passent en « Autres » et ne sont jamais perdues.',
+    'Quand tu touches « Autres » en créant une opération, tu peux écrire le nom de ta catégorie (par exemple Coiffure). Elle apparaît ensuite dans la liste, entre les catégories par défaut et « Autres », et elle est gardée pour la prochaine fois. Les opérations ne sont jamais perdues si la catégorie est supprimée : elles passent en « Autres ».',
   ),
   FaqItem(
     'L’épargne est-elle une dépense ?',
@@ -67,7 +67,7 @@ const List<FaqItem> faqItems = [
   ),
   FaqItem(
     'Comment changer de devise (FCFA, €, \$) ?',
-    'Profil → ligne « Devise ». Trois devises : FCFA (XOF, par défaut), Euro (parité fixe 1 EUR = 655,957 XOF) et Dollar (taux du jour affiché dans le panneau). Au changement, les montants sont convertis au taux du jour — ton compte reste stocké en FCFA en base.',
+    'Profil → ligne « Devise ». Trois devises : FCFA (XOF, par défaut), Euro (€) et Dollar (\$). Au changement, les montants sont convertis au taux du jour — ton compte reste stocké en FCFA en base.',
   ),
   FaqItem(
     'Comment supprimer mon compte ?',

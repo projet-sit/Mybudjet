@@ -70,9 +70,7 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
     if (result.value != null) {
       await showSuccessDialog(
         context,
-        title: 'Portefeuille créé !',
-        message: 'Votre portefeuille est prêt. Bienvenue dans MyBudget !',
-        duration: const Duration(milliseconds: 1400),
+        message: 'Votre portefeuille est prêt.',
       );
       if (mounted) context.go('/home');
     }

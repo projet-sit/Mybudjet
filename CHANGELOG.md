@@ -10,6 +10,21 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.0 (2026-11-18)
+
+### Ajouté
+
+- **Règle « Budget du mois » côté serveur** : une dépense supérieure au reste du budget est refusée (409 `BUDGET_EXCEEDED`), à la création ET à la modification (l'ancien montant est inclus dans le reste) ; revenus non limités ; comparaison en XOF entiers ; le contrôle existe aussi dans le formulaire (bouton désactivé + message sous le montant). Exception : budget non défini (base ≤ 0) = non limité.
+- Success UX : coche verte dans cercle plein vert (V blanc), auto-fermeture 2,2 s, aucun bouton, message décrivant l'opération avec le montant (ex. « Dépense de 2 000 FCFA ajoutée »).
+- Aperçu en direct dans « Autres » : « Essence · 2 000 FCFA » pendant la frappe (catégorie créée/réutilisée uniquement à la validation de l'opération ; aucune catégorie partielle si échec/annulation).
+
+### Modifié
+
+- Formulaires d'ajout de dépense et de revenu : suppression du champ facultatif « Dans quoi as-tu dépensé ? » (les anciennes descriptions restent lisibles pour l'historique).
+- Sélecteur de devise : uniquement nom + symbole des devises ; plus aucune date de taux affichée (rafraîchissement silencieux).
+- Suppression de l'entrée/l'écran « Mes catégories » du Profil (renommage/suppression maintenant uniquement via les formulaires et l'historique).
+- Messages de succès affichés uniquement après confirmation réelle du serveur ; opérations hors ligne = feedback « Enregistrée hors-ligne » (pas de faux succès) ; capture d'« Annuler » après suppression via snackbar (restauration).
+
 ## 1.2.1 (2026-11-18)
 
 ### Modifié

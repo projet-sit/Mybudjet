@@ -54,8 +54,7 @@ class HomeScreen extends ConsumerWidget {
       if (context.mounted) {
         await showSuccessDialog(
           context,
-          title: 'Export PDF généré !',
-          message: 'Votre relevé des opérations a été généré avec succès.',
+          message: 'Votre relevé des opérations a été généré.',
         );
       }
     } catch (e) {
@@ -115,9 +114,8 @@ class HomeScreen extends ConsumerWidget {
                           ref.read(syncNoticeProvider) == null) {
                         await showSuccessDialog(
                           context,
-                          title: 'Synchronisation terminée !',
-                          message: 'Toutes vos opérations sont à jour.',
-                          duration: const Duration(milliseconds: 1200),
+                          message: 'Toutes vos opérations sont synchronisées.',
+                          duration: const Duration(milliseconds: 1500),
                         );
                       }
                     },

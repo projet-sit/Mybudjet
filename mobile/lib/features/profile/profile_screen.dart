@@ -48,8 +48,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (!mounted) return;
       await showSuccessDialog(
         context,
-        title: 'Export PDF généré !',
-        message: 'Votre relevé des opérations a été généré avec succès.',
+        message: 'Votre relevé des opérations a été généré.',
       );
     } catch (e) {
       if (mounted) {
@@ -87,22 +86,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _resetAll() => showResetAllFlow(context, ref);
 
-  /// Sous-titre de la ligne Devise : devise active + date de mise à jour
-  /// du taux USD lorsque l'USD est choisie.
-  String _currencySubtitle(CurrencyState state) {
-    final base = switch (state.code) {
-      'EUR' => 'Euro (EUR) — 1 EUR = 655,957 XOF',
-      'USD' => 'Dollar américain (USD)',
-      _ => 'Franc CFA — FCFA (XOF)',
-    };
-    if (state.code != 'USD') return base;
-    final at = state.usdUpdatedAt;
-    if (at == null) return '$base — taux de secours (hors ligne)';
-    final date = '${at.day.toString().padLeft(2, '0')}/${at.month.toString().padLeft(2, '0')}/${at.year}';
-    return state.usdIsFallback
-        ? '$base — taux de secours du $date'
-        : '$base — taux du $date';
-  }
+  /// Sous-titre de la ligne Devise : nom + symbole de la devise active.
+  String _currencySubtitle(CurrencyState state) => switch (state.code) {
+        'EUR' => 'Euro (€)',
+        'USD' => 'Dollar (\$)',
+        _ => 'Franc CFA (FCFA)',
+      };
 
   /// Interrupteur « Alertes de budget » : à l'activation, demande la permission
   /// POST_NOTIFICATIONS (Android 13+). En cas de refus, l'interrupteur reste coupé.
@@ -133,7 +122,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (context.mounted) {
         await showSuccessDialog(
           context,
-          title: 'Photo enregistrée !',
           message: 'Votre photo de profil a été mise à jour.',
           duration: const Duration(milliseconds: 1200),
         );
@@ -149,7 +137,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) {
       await showSuccessDialog(
         context,
-        title: 'Photo retirée !',
         message: 'Votre photo de profil a été retirée.',
         duration: const Duration(milliseconds: 1200),
       );
@@ -410,14 +397,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             children: [
               Divider(height: 1, color: scheme.outline),
               ListTile(
-                leading: Icon(Icons.label_outline, color: scheme.primary),
-                title: const _TileTitle('Mes catégories'),
-                subtitle: const _TileSubtitle('Renommer ou supprimer les tiennes'),
-                trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-                onTap: () => context.push('/my-categories'),
-              ),
-              Divider(height: 1, color: scheme.outline),
-              ListTile(
                 leading: Icon(Icons.savings_outlined, color: scheme.primary),
                 title: const _TileTitle('Mon épargne'),
                 subtitle: _TileSubtitle(
@@ -612,8 +591,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (!mounted) return;
         await showSuccessDialog(
           context,
-          title: 'Compte supprimé !',
-          message: 'Votre compte et vos données ont été supprimés avec succès.',
+          message: 'Votre compte et vos données ont été supprimés.',
         );
         if (mounted) context.go('/login');
       } catch (e) {

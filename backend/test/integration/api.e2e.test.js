@@ -311,3 +311,91 @@ test('restauration d’une période archivée sur période courante vide → suc
   assert.equal(list.json.data.total, 1);
   assert.equal(list.json.data.transactions[0].amount, 1500);
 });
+
+test("dépense supérieure au reste du budget -> 409 BUDGET_EXCEEDED", async () => {
+  app = await startApp();
+  const { token, walletId } = await setupWallet(); // initial 100 000
+
+  const income = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'income', amount: 50000, category: 'Salaire', date: '2026-11-10', time: '09:00' },
+  });
+  assert.equal(income.status, 201);
+
+  // Base = 100 000 + 50 000 = 150 000 ; on dépense 120 000 -> reste 30 000.
+  const big = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'expense', amount: 120000, category: 'Alimentation', date: '2026-11-10', time: '10:00' },
+  });
+  assert.equal(big.status, 201, JSON.stringify(big.json));
+
+  const blocked = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'expense', amount: 30001, category: 'Alimentation', date: '2026-11-10', time: '11:00' },
+  });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.json.error.code, 'BUDGET_EXCEEDED');
+
+  // Reste exact (30000) : autorisé.
+  const exact = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'expense', amount: 30000, category: 'Alimentation', date: '2026-11-10', time: '12:00' },
+  });
+  assert.equal(exact.status, 201, JSON.stringify(exact.json));
+
+  // Reste à 0 : toute dépense est refusée.
+  const blockedAtZero = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'expense', amount: 1, category: 'Alimentation', date: '2026-11-10', time: '13:00' },
+  });
+  assert.equal(blockedAtZero.status, 409);
+  assert.equal(blockedAtZero.json.error.code, 'BUDGET_EXCEEDED');
+});
+
+test("modification : l'ancien montant est inclus dans le reste du budget", async () => {
+  app = await startApp();
+  const { token, walletId } = await setupWallet(); // initial 100 000
+
+  const created = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'expense', amount: 40000, category: 'Loisirs', date: '2026-11-10', time: '10:00' },
+  });
+  assert.equal(created.status, 201);
+  const txId = created.json.data.transaction.id;
+
+  // Modifier vers un montant au-delà du reste (100 000) : refusé (409 BUDGET_EXCEEDED).
+  const tooBig = await api(`/wallets/${walletId}/transactions/${txId}`, {
+    method: 'PATCH',
+    token,
+    body: { type: 'expense', amount: 100001, category: 'Loisirs', date: '2026-11-10', time: '10:00' },
+  });
+  assert.equal(tooBig.status, 409);
+  assert.equal(tooBig.json.error.code, 'BUDGET_EXCEEDED');
+
+  // Modification jusqu'au reste exact (100 000) : acceptée.
+  const exact = await api(`/wallets/${walletId}/transactions/${txId}`, {
+    method: 'PATCH',
+    token,
+    body: { type: 'expense', amount: 100000, category: 'Loisirs', date: '2026-11-10', time: '10:00' },
+  });
+  assert.equal(exact.status, 200, JSON.stringify(exact.json));
+  assert.equal(exact.json.data.transaction.amount, 100000);
+});
+
+test("revenus : non limités par le budget du mois", async () => {
+  app = await startApp();
+  const { token, walletId } = await setupWallet(); // initial 100 000
+
+  const income = await api(`/wallets/${walletId}/transactions`, {
+    method: 'POST',
+    token,
+    body: { type: 'income', amount: 5000000, category: 'Business', date: '2026-11-10', time: '10:00' },
+  });
+  assert.equal(income.status, 201, JSON.stringify(income.json));
+});

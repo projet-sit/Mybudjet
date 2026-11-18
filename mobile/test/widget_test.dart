@@ -84,6 +84,42 @@ void main() {
     expect(find.text('+10 000'), findsNothing);
   });
 
+  test('budgetRemainingXof : formule identique au serveur', () {
+    // Budget non défini (base ≤ 0) -> null (comportement illimité).
+    expect(
+      budgetRemainingXof(initialAmount: 0, totalIncomes: 0, totalExpenses: 0, savingsAmount: 0),
+      isNull,
+    );
+    // Budget défini à 0 (solde nul) — base 0 -> aucun dépassement possible, 0 restant.
+    expect(
+      budgetRemainingXof(initialAmount: 10000, totalIncomes: 0, totalExpenses: 20000, savingsAmount: 0),
+      0,
+    );
+    // Base = initial + revenus − épargne ; reste = base − dépenses (clamp à 0).
+    expect(
+      budgetRemainingXof(initialAmount: 100000, totalIncomes: 50000, totalExpenses: 120000, savingsAmount: 0),
+      30000,
+    );
+    expect(
+      budgetRemainingXof(initialAmount: 100000, totalIncomes: 50000, totalExpenses: 160000, savingsAmount: 0),
+      0,
+    );
+    // L'épargne réduit la base.
+    expect(
+      budgetRemainingXof(initialAmount: 100000, totalIncomes: 0, totalExpenses: 90000, savingsAmount: 10000),
+      0,
+    );
+    expect(
+      budgetRemainingXof(initialAmount: 100000, totalIncomes: 0, totalExpenses: 80000, savingsAmount: 10000),
+      10000,
+    );
+    // Dépense exacte = reste -> autorisé (0 restante ensuite).
+    expect(
+      budgetRemainingXof(initialAmount: 50000, totalIncomes: 0, totalExpenses: 50000, savingsAmount: 0),
+      0,
+    );
+  });
+
   test('formatMoney groupe les milliers (XOF)', () {
     expect(formatMoney(150000), '150 000 FCFA');
     expect(formatMoney(150000, withCurrency: false, currency: 'XOF'), '150 000');

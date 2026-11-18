@@ -70,7 +70,8 @@ class HomeScreen extends ConsumerWidget {
     final pending = sync.isPending;
     final wallet = walletState.value;
 
-    if (walletState.isLoading) {
+    // Chargement plein écran uniquement au tout premier chargement (aucune donnée).
+    if (wallet == null && walletState.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -221,6 +222,8 @@ class HomeScreen extends ConsumerWidget {
                 border: Border.all(color: scheme.outline),
               ),
               child: dashboardState.when(
+                skipLoadingOnReload: true,
+                skipLoadingOnRefresh: true,
                 loading: () => const Padding(
                   padding: EdgeInsets.all(24),
                   child: Center(child: CircularProgressIndicator()),
@@ -416,6 +419,7 @@ class _HeroCard extends StatelessWidget {
     final available = (wallet.balance - wallet.savingsAmount).clamp(0, wallet.balance);
 
     return Container(
+      key: const ValueKey('hero-card'),
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -485,10 +489,14 @@ class _HeroCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Text('Reste', style: TextStyle(color: Colors.white70, fontSize: 12)),
           const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: _ResteCounter(value: available),
+          // La zone du montant garde toujours la même hauteur.
+          SizedBox(
+            height: 36,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: _ResteCounter(value: available),
+            ),
           ),
           const SizedBox(height: 12),
           Row(

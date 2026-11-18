@@ -73,9 +73,7 @@ class _SuccessPanel extends ConsumerWidget {
           liveRegion: true,
           label: label,
           child: RepaintBoundary(
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.35),
-              child: Center(
+            child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -136,7 +134,6 @@ class _SuccessPanel extends ConsumerWidget {
                     ),
                   ],
                 ),
-              ),
             ),
           ),
         ),
@@ -168,15 +165,10 @@ class _ReduceMotionPanel extends StatelessWidget {
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0, end: 1),
               duration: const Duration(milliseconds: 150),
-              builder: (context, t, child) {
-                return Opacity(
-                  opacity: t.clamp(0.0, 1.0),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    child: Center(child: child),
-                  ),
-                );
-              },
+              builder: (context, t, child) => Opacity(
+                opacity: t.clamp(0.0, 1.0),
+                child: Center(child: child),
+              ),
               child: Container(
                 key: const ValueKey('success-card'),
                 padding: const EdgeInsets.all(18),

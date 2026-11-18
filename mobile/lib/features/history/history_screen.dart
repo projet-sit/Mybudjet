@@ -232,6 +232,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           SizedBox(
             height: 48,
             child: state.when(
+              skipLoadingOnReload: true,
+              skipLoadingOnRefresh: true,
               loading: () => const SizedBox.shrink(),
               error: (_, _) => const SizedBox.shrink(),
               data: (s) => ListView(
@@ -254,6 +256,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             child: _isSearching
                 ? _searchList(scheme)
                 : state.when(
+                    skipLoadingOnReload: true,
+                    skipLoadingOnRefresh: true,
                     loading: () => const Center(child: CircularProgressIndicator()),
                     error: (error, _) => Center(
                       child: Padding(

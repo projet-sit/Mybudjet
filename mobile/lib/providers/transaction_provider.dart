@@ -203,22 +203,8 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
     // Marque la ligne à surligner pour cette session.
     ref.read(lastCreatedTransactionIdProvider.notifier).setId(tx.id);
 
-    if (!result.queued) {
-      try {
-        await refreshAll();
-      } catch (_) {
-        // Le repli cache prend le relais côté écrans ; l'animation doit partir quand même.
-      }
-    } else {
-      ref.invalidate(dashboardControllerProvider);
-      ref.invalidate(walletControllerProvider);
-      ref.invalidate(transactionsProvider);
-      try {
-        await ref.read(syncInfoProvider.notifier).refresh();
-      } catch (_) {
-        // L'icône de synchro se rattrapera au prochain retour sur l'écran.
-      }
-    }
+    // Rafraîchit uniquement les valeurs concernées, sans repasser en chargement.
+    await _refreshAfterWrite(queued: result.queued);
 
     // Déclenche l'animation de succès.
     ref.read(successFeedbackProvider.notifier).emit(
@@ -232,27 +218,40 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
   /// Met à jour une opération via l'Outbox. Pas d'animation de succès.
   Future<void> updateTransaction(String walletId, Transaction tx) async {
     final result = await Outbox.instance.updateTransaction(walletId, tx);
-    if (!result.queued) {
-      try {
-        await refreshAll();
-      } catch (_) {
-        // Le repli cache prend le relais ; la modification est bien enregistrée.
-      }
-    } else {
-      ref.invalidate(dashboardControllerProvider);
-      ref.invalidate(walletControllerProvider);
-      ref.invalidate(transactionsProvider);
-      try {
-        await ref.read(syncInfoProvider.notifier).refresh();
-      } catch (_) {
-        // Icône de synchro : rattrapage au prochain retour sur l'écran.
-      }
+    // Rafraîchit uniquement les valeurs concernées, sans repasser en chargement.
+    await _refreshAfterWrite(queued: result.queued);
+  }
+
+  /// Met à jour l'accueil et les listes impactées après une écriture réussie.
+  /// Ne bascule jamais vers un état « chargement » quand des données existent.
+  Future<void> _refreshAfterWrite({required bool queued}) async {
+    await Future.wait([
+      ref.read(transactionsProvider.notifier).refresh(),
+      ref.read(dashboardControllerProvider.notifier).refresh(),
+      ref.read(walletControllerProvider.notifier).refresh(),
+    ]);
+    // Ces écrans rafraîchiront leurs données seulement quand ils seront visibles.
+    ref.invalidate(statsControllerProvider);
+    ref.invalidate(budgetsControllerProvider);
+    try {
+      await ref.read(syncInfoProvider.notifier).refresh();
+    } catch (_) {
+      // L'icône de synchro se rattrapera au prochain retour sur l'écran.
     }
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() => build());
+    final previous = state.value;
+    try {
+      state = AsyncData(await build());
+    } catch (_) {
+      // Avec un état existant, un refresh échoué ne fait pas disparaître les données.
+      if (previous != null) {
+        state = AsyncData(previous);
+      } else {
+        rethrow;
+      }
+    }
   }
 
   Future<void> setTypeFilter(String type) async {
@@ -260,7 +259,7 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
     final previous = state.value;
     if (wallet == null || previous == null) return;
     try {
-      state = const AsyncLoading();
+      // Les dernières valeurs restent affichées pendant le changement de filtre.
       final base = previous.copyWith(typeFilter: type);
       final q = _query(wallet.id, base, firstPage: true);
       final page = await TransactionRepository.instance.list(wallet.id, query: q);
@@ -310,7 +309,7 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
     final previous = state.value;
     if (wallet == null || previous == null) return;
     final q = (search ?? '').trim();
-    state = const AsyncLoading();
+    // La recherche est instantanée/local : on remplace les données sans écran de chargement.
     final base = previous.copyWith(clearSearch: true, search: search);
     final cached = await CacheService.instance.loadTransactions(wallet.id);
     final mergedAll = await Outbox.instance.applyOverlay(cached);
@@ -500,8 +499,16 @@ class StatsController extends AsyncNotifier<StatsData?> {
 
   Future<void> setPeriod(String p) async {
     period = p;
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() => build());
+    final previous = state.value;
+    try {
+      state = AsyncData(await build());
+    } catch (_) {
+      if (previous != null) {
+        state = AsyncData(previous);
+      } else {
+        rethrow;
+      }
+    }
   }
 }
 

@@ -71,6 +71,8 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
           const SizedBox(height: 14),
           Expanded(
             child: budgetsState.when(
+              skipLoadingOnReload: true,
+              skipLoadingOnRefresh: true,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => Center(
                 child: Padding(

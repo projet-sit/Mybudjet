@@ -29,7 +29,7 @@ void main() {
     expect(find.text('Effectué'), findsOneWidget);
     // Aucun bouton de confirmation dans la boîte de succès.
     expect(find.widgetWithText(FilledButton, 'C’est compris'), findsNothing);
-    expect(find.byKey(const ValueKey('success-circle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('success-icon')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

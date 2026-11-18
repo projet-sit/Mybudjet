@@ -4,12 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../theme/app_theme.dart';
-
 /// Système de retour utilisateur (Success UX) — composant unique et réutilisable.
 ///
 /// - [SuccessDialog] : confirmation visuelle animée d'une opération RÉUSSIE
-///   (cercle vert clair + coche verte dessinée progressivement, rebond, fondu).
+///   (carré arrondi vert + coche blanche dessinée progressivement).
 ///   Jamais affichée en cas d'échec.
 /// - [showSuccessDialog] : helper maison (durée configurable).
 /// - [showErrorSnackBar] / [showInfoSnackBar] / [showWarningSnackBar] :
@@ -97,7 +95,7 @@ Future<void> showSuccessDialog(
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: 'Fermer',
-    barrierColor: Colors.black.withValues(alpha: 0.45),
+    barrierColor: Colors.black.withValues(alpha: 0.35),
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return SuccessDialog(
@@ -144,7 +142,7 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _circleScale = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0.0, 0.55, curve: Curves.elasticOut),
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
     );
     _checkProgress = CurvedAnimation(
       parent: _controller,
@@ -177,8 +175,6 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -187,14 +183,16 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
           width: math.min(320, MediaQuery.sizeOf(context).width - 64),
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
           decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: scheme.outline),
+            // Carte blanche unie + texte sombre : toujours lisible,
+            // quel que soit le fond (comme l'icône fournie).
+            color: const Color(0xFFFFFFFF),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE5E5E5), width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 32,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 28,
+                offset: const Offset(0, 14),
               ),
             ],
           ),
@@ -213,26 +211,24 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
                   );
                 },
                 child: CustomPaint(
-                  key: const ValueKey('success-circle'),
-                  size: const Size(92, 92),
-                  painter: _SuccessCirclePainter(
+                  key: const ValueKey('success-icon'),
+                  size: const Size(88, 88),
+                  painter: _SuccessIconPainter(
                     progress: _checkProgress,
-                    fillColor: AppColors.incomeGreen,
-                    checkColor: Colors.white,
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               FadeTransition(
                 opacity: _textOpacity,
-                child: Text(
+                child: const Text(
                   'Effectué',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
-                    color: scheme.onSurface,
+                    color: Color(0xFF111111),
                   ),
                 ),
               ),
@@ -244,32 +240,39 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
   }
 }
 
-/// Cercle PLEIN vert avec coche blanche tracée progressivement.
-class _SuccessCirclePainter extends CustomPainter {
-  _SuccessCirclePainter({
-    required this.progress,
-    required this.fillColor,
-    required this.checkColor,
-  });
+/// Carré arrondi vert (fond dégradé haut clair -> bas foncé) avec coche blanche
+/// tracée progressivement — style moderne "iOS" type image fournie.
+class _SuccessIconPainter extends CustomPainter {
+  _SuccessIconPainter({required this.progress});
 
   final Animation<double> progress;
-  final Color fillColor;
-  final Color checkColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 3;
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(size.width * 0.23));
 
-    // Cercle plein (validé visuellement comme dans les apps courantes).
-    canvas.drawCircle(center, radius, Paint()..color = fillColor);
+    // Fond vert dégradé (haut #36D64B -> bas #1FB33B)
+    const gradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0xFF36D64B), Color(0xFF1FB33B)],
+    );
+    canvas.drawRRect(rrect, Paint()..shader = gradient.createShader(rect));
 
-    // Coche verte, dessinée progressivement
+    // Reflet subtil en haut (style moderne sobre)
+    final gloss = RRect.fromRectAndRadius(
+      Rect.fromLTWH(size.width * 0.07, size.height * 0.06, size.width * 0.86, size.height * 0.40),
+      Radius.circular(size.width * 0.18),
+    );
+    canvas.drawRRect(gloss, Paint()..color = Colors.white.withValues(alpha: 0.12));
+
+    // Coche blanche, tracée progressivement
     final t = progress.value.clamp(0.0, 1.0);
     if (t <= 0) return;
 
-    final start = Offset(size.width * 0.28, size.height * 0.54);
-    final elbow = Offset(size.width * 0.44, size.height * 0.68);
+    final start = Offset(size.width * 0.27, size.height * 0.54);
+    final elbow = Offset(size.width * 0.44, size.height * 0.69);
     final end = Offset(size.width * 0.74, size.height * 0.34);
 
     final firstLen = (elbow - start).distance;
@@ -290,9 +293,9 @@ class _SuccessCirclePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = checkColor
+        ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 7.0
+        ..strokeWidth = size.width * 0.088
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..isAntiAlias = true,
@@ -300,7 +303,6 @@ class _SuccessCirclePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SuccessCirclePainter oldDelegate) =>
-      oldDelegate.progress.value != progress.value ||
-      oldDelegate.fillColor != fillColor;
+  bool shouldRepaint(covariant _SuccessIconPainter oldDelegate) =>
+      oldDelegate.progress.value != progress.value;
 }

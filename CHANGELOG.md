@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.3 (2026-11-18)
+
+### Modifié
+
+- Message de succès : carré arrondi vert (fond dégradé haut clair -> bas foncé, reflet subtil) + coche blanche tracée progressivement ; carte blanche unie lisible sur tout fond ; animations sobre (easeOutBack).
+
 ## 1.3.2 (2026-11-18)
 
 ### Corrigé

@@ -4,8 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/utils/money.dart';
-import '../features/success_feedback/models/success_event.dart';
-import '../features/success_feedback/providers/success_feedback_provider.dart';
 import '../models/wallet.dart';
 import '../services/cache_service.dart';
 import '../services/wallet_repository.dart';
@@ -80,14 +78,6 @@ class WalletController extends AsyncNotifier<Wallet?> {
       await CacheService.instance.saveWallet(wallet);
       return wallet;
     });
-    if (state.hasValue && state.value != null) {
-      ref.read(successFeedbackProvider.notifier).emit(
-            SuccessEvent(
-              type: SuccessEventType.walletCreated,
-              detail: state.value!.name,
-            ),
-          );
-    }
   }
 
   /// Fixe le montant mis de côté (réserve dans le même compte).
@@ -116,21 +106,6 @@ class WalletController extends AsyncNotifier<Wallet?> {
     ref.invalidate(transactionsProvider);
     ref.invalidate(dashboardControllerProvider);
 
-    // Animation de succès autorisée uniquement pour les opérations d'épargne.
-    final SuccessEventType type;
-    if (newAmount == 0 && current.savingsAmount > 0) {
-      type = SuccessEventType.savingsRecovered;
-    } else if (delta > 0) {
-      type = SuccessEventType.savingsDeposited;
-    } else {
-      type = SuccessEventType.savingsWithdrawn;
-    }
-    ref.read(successFeedbackProvider.notifier).emit(
-          SuccessEvent(
-            type: type,
-            detail: formatMoneyCurrent(delta.abs()),
-          ),
-        );
   }
 
   Future<void> updateInitialAmount(int newAmount) async {

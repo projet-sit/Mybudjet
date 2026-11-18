@@ -12,9 +12,6 @@ import '../services/outbox.dart';
 import '../services/budget_alerts_service.dart';
 import '../core/search/transaction_search.dart';
 import '../providers/sync_provider.dart';
-import '../features/success_feedback/providers/success_feedback_provider.dart';
-import '../features/success_feedback/models/success_event.dart';
-import '../core/utils/money.dart';
 import 'wallet_provider.dart';
 
 /// État de la liste paginée + filtres (Phase 7).
@@ -75,18 +72,6 @@ class TransactionsState {
     );
   }
 }
-
-/// Identifiant de la dernière opération créée par l'utilisateur dans cette session.
-/// Null = aucun surlignage.
-class LastCreatedTransactionIdController extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void setId(String? id) => state = id;
-}
-
-final lastCreatedTransactionIdProvider =
-    NotifierProvider<LastCreatedTransactionIdController, String?>(LastCreatedTransactionIdController.new);
 
 class TransactionsController extends AsyncNotifier<TransactionsState> {
   Map<String, String> _query(String walletId, TransactionsState s, {required bool firstPage}) {
@@ -200,19 +185,8 @@ class TransactionsController extends AsyncNotifier<TransactionsState> {
 
     final result = await Outbox.instance.createTransaction(wallet.id, tx);
 
-    // Marque la ligne à surligner pour cette session.
-    ref.read(lastCreatedTransactionIdProvider.notifier).setId(tx.id);
-
     // Rafraîchit uniquement les valeurs concernées, sans repasser en chargement.
     await _refreshAfterWrite(queued: result.queued);
-
-    // Déclenche l'animation de succès.
-    ref.read(successFeedbackProvider.notifier).emit(
-          SuccessEvent(
-            type: tx.isExpense ? SuccessEventType.expenseAdded : SuccessEventType.incomeAdded,
-            detail: formatMoneyCurrent(tx.amount),
-          ),
-        );
   }
 
   /// Met à jour une opération via l'Outbox. Pas d'animation de succès.

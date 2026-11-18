@@ -253,7 +253,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 data: (dashboard) {
                   final items = dashboard?.latestTransactions ?? const [];
-                  final lastCreatedId = ref.watch(lastCreatedTransactionIdProvider);
                   if (items.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 28),
@@ -273,19 +272,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     children: [
                       for (var i = 0; i < items.length; i++) ...[
                         if (i > 0) Divider(height: 1, indent: 66, color: scheme.outline),
-                        if (items[i].id == lastCreatedId)
-                          _HighlightedTransactionRow(
-                            key: ValueKey('last-created-${items[i].id}'),
-                            child: TransactionTile(
-                              transaction: items[i],
-                              onTap: () => _openDetail(context, items[i]),
-                            ),
-                          )
-                        else
-                          TransactionTile(
-                            transaction: items[i],
-                            onTap: () => _openDetail(context, items[i]),
-                          ),
+                        TransactionTile(
+                          transaction: items[i],
+                          onTap: () => _openDetail(context, items[i]),
+                        ),
                       ],
                     ],
                   );
@@ -295,64 +285,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// Ligne de la dernière opération créée dans cette session : glisse dans la
-/// liste et se surligne en bleu clair, puis le surlignage s'estompe (~1 s)
-/// avant d'être entièrement retiré.
-class _HighlightedTransactionRow extends ConsumerStatefulWidget {
-  const _HighlightedTransactionRow({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  ConsumerState<_HighlightedTransactionRow> createState() => _HighlightedTransactionRowState();
-}
-
-class _HighlightedTransactionRowState extends ConsumerState<_HighlightedTransactionRow>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
-
-  @override
-  void initState() {
-    super.initState();
-    _controller
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          ref.read(lastCreatedTransactionIdProvider.notifier).setId(null);
-        }
-      })
-      ..forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const highlight = Color(0xFF7DD3FC); // bleu clair
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = Curves.easeOut.transform(_controller.value);
-        return Transform.translate(
-          offset: Offset(0.24 * (1 - t) * MediaQuery.sizeOf(context).width, 0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: highlight.withValues(alpha: 0.38 * (1 - _controller.value)),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: child,
-          ),
-        );
-      },
-      child: widget.child,
     );
   }
 }

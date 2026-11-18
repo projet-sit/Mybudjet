@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Retours utilisateur homogènes (snackbars avec icône).
-/// Les confirmations d'opération réussie passent par SuccessFeedbackOverlay.
+/// Les confirmations d'opération réussie ne sont pas affichées.
 
 // ---------- Snackbars ----------
 

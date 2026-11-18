@@ -5,9 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mybudget/core/theme/app_theme.dart';
 import 'package:mybudget/core/utils/money.dart';
 import 'package:mybudget/features/home/home_screen.dart';
-import 'package:mybudget/features/success_feedback/models/success_event.dart';
-import 'package:mybudget/features/success_feedback/providers/success_feedback_provider.dart';
-import 'package:mybudget/features/success_feedback/widgets/success_feedback_overlay.dart';
 import 'package:mybudget/models/dashboard.dart';
 import 'package:mybudget/models/wallet.dart';
 import 'package:mybudget/providers/sync_provider.dart';
@@ -112,13 +109,8 @@ Widget harness(ProviderContainer container, {ThemeData? theme}) {
     container: container,
     child: MaterialApp(
       theme: theme ?? AppTheme.light,
-      home: Stack(
-        children: const [
-          Scaffold(
-            body: HomeScreen(),
-          ),
-          SuccessFeedbackOverlay(),
-        ],
+      home: const Scaffold(
+        body: HomeScreen(),
       ),
     ),
   );
@@ -127,22 +119,7 @@ Widget harness(ProviderContainer container, {ThemeData? theme}) {
 Future<double> heroHeight(WidgetTester tester) async =>
     (tester.renderObject(find.byKey(const ValueKey('hero-card'))) as RenderBox).size.height;
 
-Future<void> expectHomeVisibleAndStable(
-  WidgetTester tester,
-  ProviderContainer container,
-  double beforeHeight,
-) async {
-  container.read(successFeedbackProvider.notifier).emit(
-        const SuccessEvent(type: SuccessEventType.expenseAdded, detail: '5 000 FCFA'),
-      );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 500));
-
-  expect(find.text('Reste'), findsOneWidget);
-  expect(find.text('Revenus'), findsOneWidget);
-  expect(find.text('Dépenses'), findsOneWidget);
-  expect(find.text('Budget du mois'), findsOneWidget);
-  expect(find.byKey(const ValueKey('hero-card')), findsOneWidget);
+void expectOnlyBudgetRing(WidgetTester tester) {
   final indicators = tester.widgetList<CircularProgressIndicator>(
     find.byType(CircularProgressIndicator),
   );
@@ -151,21 +128,27 @@ Future<void> expectHomeVisibleAndStable(
     isTrue,
     reason: 'seul l’anneau du budget est autorisé, aucun chargement',
   );
-  expect(find.byType(BackdropFilter), findsNothing);
-  expect(find.byKey(const ValueKey('success-card')), findsOneWidget);
+}
 
-  expect(await heroHeight(tester), beforeHeight);
-  await tester.pump(const Duration(milliseconds: 800));
+void expectHomeStable(WidgetTester tester) {
+  expect(find.text('Reste'), findsOneWidget);
+  expect(find.text('Revenus'), findsOneWidget);
+  expect(find.text('Dépenses'), findsOneWidget);
+  expect(find.text('Budget du mois'), findsOneWidget);
+  expect(find.byKey(const ValueKey('hero-card')), findsOneWidget);
+  expectOnlyBudgetRing(tester);
 }
 
 void main() {
-  testWidgets('Accueil : l’animation garde la carte stable et tout visible', (tester) async {
+  testWidgets('Accueil : les valeurs restent visibles après un rafraîchissement', (tester) async {
     final container = makeContainer();
     await tester.pumpWidget(harness(container));
     await tester.pumpAndSettle();
 
-    final before = await heroHeight(tester);
-    await expectHomeVisibleAndStable(tester, container, before);
+    await container.read(walletControllerProvider.notifier).refresh();
+    await tester.pump();
+
+    expectHomeStable(tester);
   });
 
   testWidgets('Accueil : un état transitoire sans valeur garde la zone Reste', (tester) async {
@@ -179,21 +162,17 @@ void main() {
 
     expect(find.text('Reste'), findsOneWidget);
     expect(find.byKey(const ValueKey('hero-card')), findsOneWidget);
-    final indicators = tester.widgetList<CircularProgressIndicator>(
-      find.byType(CircularProgressIndicator),
-    );
-    expect(indicators.every((indicator) => indicator.value != null), isTrue);
+    expectOnlyBudgetRing(tester);
   });
 
-  testWidgets('Accueil hors ligne : même comportement, rien de grisant', (tester) async {
+  testWidgets('Accueil hors ligne : les montants restent visibles', (tester) async {
     final container = makeContainer(
       sync: const SyncInfo(state: SyncState.offline, pendingCount: 1),
     );
     await tester.pumpWidget(harness(container));
     await tester.pumpAndSettle();
 
-    final before = await heroHeight(tester);
-    await expectHomeVisibleAndStable(tester, container, before);
+    expectHomeStable(tester);
     expect(find.textContaining('Hors ligne'), findsOneWidget);
   });
 
@@ -207,14 +186,7 @@ void main() {
 
     expect(find.text('Reste'), findsOneWidget);
     expect(find.text('Mon budget'), findsOneWidget);
-    final indicators = tester.widgetList<CircularProgressIndicator>(
-    find.byType(CircularProgressIndicator),
-  );
-  expect(
-    indicators.every((indicator) => indicator.value != null),
-    isTrue,
-    reason: 'seul l’anneau du budget est autorisé, aucun chargement',
-  );
+    expectOnlyBudgetRing(tester);
   });
 
   testWidgets('Accueil : le compteur Reste évolue sans disparaître', (tester) async {
@@ -240,15 +212,10 @@ void main() {
 
       final container = makeContainer();
       await tester.pumpWidget(harness(container, theme: theme));
-      container.read(successFeedbackProvider.notifier).emit(
-            const SuccessEvent(type: SuccessEventType.expenseAdded, detail: '5 000 FCFA'),
-          );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('hero-card')), findsOneWidget);
       expect(find.text('Budget du mois'), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 800));
     }
   });
 }

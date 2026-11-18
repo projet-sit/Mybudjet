@@ -32,19 +32,24 @@ Future<void> main() async {
 }
 
 Future<void> _bootstrap() async {
-  await dotenv.load(fileName: '.env');
-  await initializeDateFormatting('fr_FR');
-  // Lu AVANT runApp : pas de clignotement de l'onboarding au démarrage.
-  final prefs = await SharedPreferences.getInstance();
+  // Démarrage : toutes les initialisations indépendantes tournent EN PARALLÈLE —
+  // le temps d'affichage de la première frame = le max, pas la somme.
+  final results = await Future.wait([
+    dotenv.load(fileName: '.env'),
+    initializeDateFormatting('fr_FR'),
+    // Devise + cache du taux USD chargés AVANT runApp (pas de clignotement).
+    CurrencyService.instance.init(),
+    // Lu AVANT runApp : pas de clignotement de l'onboarding.
+    SharedPreferences.getInstance(),
+  ]);
+  final prefs = results[3] as SharedPreferences;
   final onboardingSeen = prefs.getBool(OnboardingSeenNotifier.key) ?? false;
-  // Devise active + cache du taux USD chargés AVANT runApp (pas de clignotement).
-  await CurrencyService.instance.init();
   // Réveil discret du backend (plan gratuit : il dort après inactivité).
   ApiClient.instance.wake();
   // Taux USD du jour en arrière-plan (affichage/conversion uniquement).
   unawaited(CurrencyService.instance.refreshUsdRate());
-  // Plugin de notifications locales (alertes de budget).
-  await BudgetAlertsService.instance.initialize();
+  // Plugin de notifications locales (alertes de budget) — non bloquant pour la 1re frame.
+  unawaited(BudgetAlertsService.instance.initialize());
   runApp(
     ProviderScope(
       overrides: [
@@ -84,7 +89,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       // 2. Réveil discret du backend + revalidation de la session (jeton).
       ApiClient.instance.wake();
       await ref.read(authControllerProvider.notifier).revalidate();
-      // 3. Rejoue les écritures en attente, puis rafraîchit tout.
+      // 3. Rejoue les écritures en attente, puis rafraîchit tout — EN PARALLÈLE.
       final flushResult = await Outbox.instance.flush();
       if (flushResult.hasFailures) {
         ref.read(syncNoticeProvider.notifier).setFailed(
@@ -94,10 +99,14 @@ class _MyAppState extends ConsumerState<MyApp> {
       } else if (flushResult.replayed > 0) {
         ref.read(syncNoticeProvider.notifier).clear();
       }
-      await ref.read(walletControllerProvider.notifier).refresh();
+      // Solde (portefeuille) et badge de synchro viennent du réseau indépendamment :
+      // on les rafraîchit en parallèle — dashboard/transactions invalident derrière.
+      await Future.wait([
+        ref.read(walletControllerProvider.notifier).refresh(),
+        ref.read(syncInfoProvider.notifier).refresh(),
+      ]);
       ref.invalidate(dashboardControllerProvider);
       ref.invalidate(transactionsProvider);
-      await ref.read(syncInfoProvider.notifier).refresh();
     } finally {
       _resumeRunning = false;
     }

@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.2.1 (2026-11-18)
+
+### Modifié
+
+- **Performances** : démarrage parallélisé (dotenv, formatage date locale, devise, préférences lus en même temps — première frame plus rapide d'autant), plugin de notifications locales initialisé en arrière-plan, revalidation au retour au premier plan (solde + badge synchro en parallèle), liste des opérations de l'historique en `ListView.builder` (mise en page paresseuse jours par jours) au lieu d'enfants tous construits à l'avance.
+
 ## 1.2.0 (2026-11-18)
 
 ### Ajouté

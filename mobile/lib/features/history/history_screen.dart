@@ -394,101 +394,106 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       groups.putIfAbsent(tx.date, () => []).add(tx);
     }
 
+    // Liste PLATE bâtie en lazy : les jours (et leurs libellés) ne sont
+    // construits que lorsqu'ils entrent dans la zone visible.
+    final rows = <Widget>[
+      Text(
+        '$footerCount opération${footerCount > 1 ? 's' : ''}',
+        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+      ),
+      const SizedBox(height: 8),
+      for (final entry in groups.entries) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+          child: Row(
+            children: [
+              Text(
+                relativeDateLabel(entry.key),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const Spacer(),
+              if (_hasCountableOps(entry.value))
+                Text(
+                  formatMoneyCurrent(
+                    entry.value.fold<int>(
+                      0,
+                      (sum, tx) => sum + (tx.isExpense ? -tx.amount : (tx.isIncome ? tx.amount : 0)),
+                    ),
+                    withCurrency: false,
+                  ),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: scheme.outline),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < entry.value.length; i++) ...[
+                if (i > 0)
+                  Divider(height: 1, indent: 66, color: scheme.outline),
+                Dismissible(
+                  key: ValueKey(entry.value[i].id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    color: scheme.error,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    child: Icon(Icons.delete_outline, color: scheme.onError),
+                  ),
+                  onDismissed: (_) => _delete(entry.value[i]),
+                  child: TransactionTile(
+                    transaction: entry.value[i],
+                    onTap: () => _openDetail(entry.value[i]),
+                    highlight: highlight,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+      if (hasMore && !_isSearching) ...[
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: isLoadingMore
+              ? null
+              : () => ref.read(transactionsProvider.notifier).loadMore(),
+          child: isLoadingMore
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Charger plus'),
+        ),
+      ],
+    ];
+
     return RefreshIndicator(
       onRefresh: () async {
         await ref.read(walletControllerProvider.notifier).refresh();
         await ref.read(transactionsProvider.notifier).refresh();
         if (_isSearching) await _runSearch();
       },
-      child: ListView(
+      child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-        children: [
-          Text(
-            '$footerCount opération${footerCount > 1 ? 's' : ''}',
-            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 8),
-          for (final entry in groups.entries) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
-              child: Row(
-                children: [
-                  Text(
-                    relativeDateLabel(entry.key),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_hasCountableOps(entry.value))
-                    Text(
-                      formatMoneyCurrent(
-                        entry.value.fold<int>(
-                          0,
-                          (sum, tx) => sum + (tx.isExpense ? -tx.amount : (tx.isIncome ? tx.amount : 0)),
-                        ),
-                        withCurrency: false,
-                      ),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: scheme.outline),
-              ),
-              child: Column(
-                children: [
-                  for (var i = 0; i < entry.value.length; i++) ...[
-                    if (i > 0)
-                      Divider(height: 1, indent: 66, color: scheme.outline),
-                    Dismissible(
-                      key: ValueKey(entry.value[i].id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: scheme.error,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: Icon(Icons.delete_outline, color: scheme.onError),
-                      ),
-                      onDismissed: (_) => _delete(entry.value[i]),
-                      child: TransactionTile(
-                        transaction: entry.value[i],
-                        onTap: () => _openDetail(entry.value[i]),
-                        highlight: highlight,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-          if (hasMore && !_isSearching) ...[
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: isLoadingMore
-                  ? null
-                  : () => ref.read(transactionsProvider.notifier).loadMore(),
-              child: isLoadingMore
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Charger plus'),
-            ),
-          ],
-        ],
+        itemCount: rows.length,
+        itemBuilder: (context, index) => rows[index],
       ),
     );
   }

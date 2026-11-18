@@ -59,6 +59,10 @@ class FakeWalletController extends WalletController {
     // se remplacer par un placeholder.
     state = AsyncData(_value);
   }
+
+  void dropWalletTransiently() {
+    state = const AsyncLoading();
+  }
 }
 
 class FakeDashboardController extends DashboardController {
@@ -162,6 +166,23 @@ void main() {
 
     final before = await heroHeight(tester);
     await expectHomeVisibleAndStable(tester, container, before);
+  });
+
+  testWidgets('Accueil : un état transitoire sans valeur garde la zone Reste', (tester) async {
+    final container = makeContainer();
+    await tester.pumpWidget(harness(container));
+    await tester.pumpAndSettle();
+
+    final notifier = container.read(walletControllerProvider.notifier) as FakeWalletController;
+    notifier.dropWalletTransiently();
+    await tester.pump();
+
+    expect(find.text('Reste'), findsOneWidget);
+    expect(find.byKey(const ValueKey('hero-card')), findsOneWidget);
+    final indicators = tester.widgetList<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(indicators.every((indicator) => indicator.value != null), isTrue);
   });
 
   testWidgets('Accueil hors ligne : même comportement, rien de grisant', (tester) async {

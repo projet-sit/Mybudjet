@@ -21,8 +21,17 @@ import '../transactions/transaction_detail_sheet.dart';
 
 /// Accueil (maquette « MyBudget ») : salutation, solde, revenus/dépenses,
 /// budget du mois, actions rapides, épargne, dernières opérations.
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  /// Dernier portefeuille connu : une validation transitoire ne fait pas
+  /// disparaître la zone « Reste » pendant l'écriture d'une opération.
+  Wallet? _lastWallet;
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -60,15 +69,22 @@ class HomeScreen extends ConsumerWidget {
 
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Une déconnexion réelle retire aussi la copie locale affichée.
+    if (ref.watch(authControllerProvider).value == null) {
+      _lastWallet = null;
+    }
     final walletState = ref.watch(walletControllerProvider);
+    if (walletState.value != null) {
+      _lastWallet = walletState.value;
+    }
+    final wallet = walletState.value ?? _lastWallet;
     final dashboardState = ref.watch(dashboardControllerProvider);
     final sync = ref.watch(syncInfoProvider);
     final notice = ref.watch(syncNoticeProvider);
     final offline = sync.isOffline;
     final pending = sync.isPending;
-    final wallet = walletState.value;
 
     // Chargement plein écran uniquement au tout premier chargement (aucune donnée).
     if (wallet == null && walletState.isLoading) {

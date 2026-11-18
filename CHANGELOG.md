@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.2 (2026-11-18)
+
+### Corrigé
+
+- « Nous contacter » : numéro du support au format béninois international (+229 01 92 09 87 52) — le bouton WhatsApp ouvre bien la bonne conversation.
+
 ## 1.3.1 (2026-11-18)
 
 ### Modifié

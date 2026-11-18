@@ -52,10 +52,7 @@ class HomeScreen extends ConsumerWidget {
       );
       await CacheService.instance.shareFile(path);
       if (context.mounted) {
-        await showSuccessDialog(
-          context,
-          message: 'Votre relevé des opérations a été généré.',
-        );
+        await showSuccessDialog(context);
       }
     } catch (e) {
       if (context.mounted) showErrorSnackBar(context, TransactionsController.messageFrom(e));
@@ -112,11 +109,7 @@ class HomeScreen extends ConsumerWidget {
                       await ref.read(transactionsProvider.notifier).refreshAll();
                       if (context.mounted &&
                           ref.read(syncNoticeProvider) == null) {
-                        await showSuccessDialog(
-                          context,
-                          message: 'Toutes vos opérations sont synchronisées.',
-                          duration: const Duration(milliseconds: 1500),
-                        );
+                        await showSuccessDialog(context);
                       }
                     },
                   ),

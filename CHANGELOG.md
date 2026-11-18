@@ -10,6 +10,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - [1.0.1 (2026-11-14)](#101-2026-11-14)
 - [1.0.0 (2026-11-14)](#100-2026-11-14)
 
+## 1.3.1 (2026-11-18)
+
+### Modifié
+
+- Message de succès : cercle plein vert + coche blanche animée, « Effectué » en bas, aucun bouton, aucun détail d'opération ; fermeture automatique (~2,2 s) ou au toucher en dehors.
+
 ## 1.3.0 (2026-11-18)
 
 ### Ajouté

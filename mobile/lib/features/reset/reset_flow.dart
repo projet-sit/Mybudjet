@@ -104,10 +104,7 @@ Future<void> showResetAllFlow(BuildContext context, WidgetRef ref) async {
   await ref.read(authControllerProvider.notifier).revalidate();
 
   if (!context.mounted) return;
-  await showSuccessDialog(
-    context,
-    message: 'Toutes vos données ont été supprimées.',
-  );
+  await showSuccessDialog(context);
   if (!context.mounted) return;
   // L'app repart de zéro : création du premier portefeuille (comme après
   // inscription), pas les 3 écrans d'introduction.

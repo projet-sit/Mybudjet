@@ -293,14 +293,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         return;
       }
       // Boîte de succès affichée au-dessus de la feuille, puis on ferme la feuille.
-      final typeLabel = _mode == 'expense' ? 'Dépense' : 'Revenu';
-      final isEdit = widget.editing != null;
-      final verbAdded = _mode == 'expense' ? 'ajoutée' : 'ajouté';
-      final verbEdited = _mode == 'expense' ? 'modifiée' : 'modifié';
-      final successMessage = isEdit
-          ? '$typeLabel de ${formatMoneyCurrent(amount)} $verbEdited.'
-          : '$typeLabel de ${formatMoneyCurrent(amount)} $verbAdded.';
-      await showSuccessDialog(context, message: successMessage);
+      await showSuccessDialog(context);
       if (mounted) Navigator.of(context).pop();
       createdCategoryId = null; // succès : on garde la catégorie créée
     } catch (e) {

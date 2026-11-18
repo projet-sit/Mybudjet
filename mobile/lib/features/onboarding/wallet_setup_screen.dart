@@ -68,10 +68,7 @@ class _WalletSetupScreenState extends ConsumerState<WalletSetupScreen> {
     final result = ref.read(walletControllerProvider);
     // En cas d'échec, le message est affiché sous le formulaire.
     if (result.value != null) {
-      await showSuccessDialog(
-        context,
-        message: 'Votre portefeuille est prêt.',
-      );
+      await showSuccessDialog(context);
       if (mounted) context.go('/home');
     }
   }

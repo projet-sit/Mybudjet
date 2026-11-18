@@ -46,10 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       await CacheService.instance.shareFile(path);
       if (!mounted) return;
-      await showSuccessDialog(
-        context,
-        message: 'Votre relevé des opérations a été généré.',
-      );
+      await showSuccessDialog(context);
     } catch (e) {
       if (mounted) {
         showErrorSnackBar(context, 'Export PDF impossible. Vérifie ta connexion puis réessaie.');
@@ -120,11 +117,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
       await ref.read(profilePhotoProvider.notifier).setFromPick(source);
       if (context.mounted) {
-        await showSuccessDialog(
-          context,
-          message: 'Votre photo de profil a été mise à jour.',
-          duration: const Duration(milliseconds: 1200),
-        );
+        await showSuccessDialog(context);
       }
     } catch (_) {
       if (!context.mounted) return;
@@ -135,11 +128,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _removePhoto() async {
     await ref.read(profilePhotoProvider.notifier).clear();
     if (mounted) {
-      await showSuccessDialog(
-        context,
-        message: 'Votre photo de profil a été retirée.',
-        duration: const Duration(milliseconds: 1200),
-      );
+      await showSuccessDialog(context);
     }
   }
 
@@ -589,10 +578,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       try {
         await ref.read(authControllerProvider.notifier).deleteAccount();
         if (!mounted) return;
-        await showSuccessDialog(
-          context,
-          message: 'Votre compte et vos données ont été supprimés.',
-        );
+        await showSuccessDialog(context);
         if (mounted) context.go('/login');
       } catch (e) {
         if (!mounted) return;

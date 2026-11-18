@@ -49,10 +49,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _step = 1;
         _tokenController.text = token; // Pré-rempli en développement.
       });
-      await showSuccessDialog(
-        context,
-        message: 'Votre demande a bien été envoyée.',
-      );
+      await showSuccessDialog(context);
     } catch (e) {
       setState(() => _error = 'Impossible de demander une réinitialisation. Réessaie.');
     } finally {
@@ -79,10 +76,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
-      await showSuccessDialog(
-        context,
-        message: 'Votre mot de passe a été mis à jour.',
-      );
+      await showSuccessDialog(context);
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {

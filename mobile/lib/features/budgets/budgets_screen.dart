@@ -303,11 +303,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
         return;
       }
       if (!mounted) return;
-      await showSuccessDialog(
-        context,
-        message: 'Limite ajustée à ${formatMoneyCurrent(next)}.',
-        duration: const Duration(milliseconds: 1400),
-      );
+      await showSuccessDialog(context);
     } catch (e) {
       if (!mounted) return;
       showErrorSnackBar(context, TransactionsController.messageFrom(e));
@@ -341,10 +337,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             icon: Icons.cloud_off_outlined,
           );
         } else {
-          await showSuccessDialog(
-            context,
-            message: 'Budget de ${b.category} supprimé.',
-          );
+          await showSuccessDialog(context);
         }
       } catch (e) {
         if (!mounted) return;
@@ -431,10 +424,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
             icon: Icons.cloud_off_outlined,
           );
         } else {
-          await showSuccessDialog(
-            context,
-            message: 'Budget de ${result.category} créé.',
-          );
+          await showSuccessDialog(context);
         }
       } catch (e) {
         if (!mounted) return;
@@ -486,10 +476,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
               icon: Icons.cloud_off_outlined,
             );
           } else {
-            await showSuccessDialog(
-              context,
-              message: 'Limite de ${b.category} ajustée à ${formatMoneyCurrent(amount)}.',
-            );
+            await showSuccessDialog(context);
           }
         } catch (e) {
           if (!mounted) return;

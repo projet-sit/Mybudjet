@@ -11,7 +11,7 @@ import '../theme/app_theme.dart';
 /// - [SuccessDialog] : confirmation visuelle animée d'une opération RÉUSSIE
 ///   (cercle vert clair + coche verte dessinée progressivement, rebond, fondu).
 ///   Jamais affichée en cas d'échec.
-/// - [showSuccessDialog] : helper maison (titre, message, durée, action optionnelle).
+/// - [showSuccessDialog] : helper maison (durée configurable).
 /// - [showErrorSnackBar] / [showInfoSnackBar] / [showWarningSnackBar] :
 ///   snackbars homogènes avec icône pour les autres retours.
 
@@ -85,13 +85,11 @@ void showWarningSnackBar(BuildContext context, String message) {
 
 /// Affiche la boîte de confirmation de succès.
 ///
+/// - Élément minimal : le cercle avec la coche animée, et « Effectué ».
 /// - Se ferme automatiquement après [duration] (défaut 2,2 s),
-///   et au toucher en dehors.
-/// - Aucun bouton : l'élément contient uniquement le cercle avec la coche
-///   et le message décrivant l'opération effectuée.
+///   et au toucher en dehors. Aucun bouton.
 Future<void> showSuccessDialog(
   BuildContext context, {
-  required String message,
   Duration duration = const Duration(milliseconds: 2200),
   bool barrierDismissible = true,
 }) {
@@ -103,7 +101,6 @@ Future<void> showSuccessDialog(
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return SuccessDialog(
-        message: message,
         duration: duration,
         onClose: () => Navigator.of(dialogContext).pop(),
       );
@@ -118,17 +115,15 @@ Future<void> showSuccessDialog(
   );
 }
 
-/// Boîte de confirmation animée : cercle plein vert + coche blanche, et
-/// message décrivant l'opération effectuée. Aucun bouton.
+/// Boîte de confirmation animée : cercle plein vert + coche blanche et
+/// l'intitulé « Effectué ». Aucun bouton, aucun détail d'opération.
 class SuccessDialog extends StatefulWidget {
   const SuccessDialog({
     super.key,
-    required this.message,
     this.duration = const Duration(milliseconds: 2200),
     this.onClose,
   });
 
-  final String message;
   final Duration duration;
   final VoidCallback? onClose;
 
@@ -227,16 +222,15 @@ class _SuccessDialogState extends State<SuccessDialog> with SingleTickerProvider
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               FadeTransition(
                 opacity: _textOpacity,
                 child: Text(
-                  widget.message,
+                  'Effectué',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.4,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                     color: scheme.onSurface,
                   ),
